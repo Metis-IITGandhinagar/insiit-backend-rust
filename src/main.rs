@@ -1,13 +1,13 @@
 // Comment out the following line when building for production
-#![allow(unused)]
+// #![allow(unused)]
 
 
-use axum::{ routing::{ Router, get, post } };
+use axum::{ routing::{ Router, get } };
 mod helpers;
 mod routes;
 mod schemas;
 use sqlx::{ postgres::PgPoolOptions };
-use std::{ env::var, fmt::format };
+use std::env::var;
 
 #[tokio::main]
 async fn main() {
@@ -24,12 +24,16 @@ async fn main() {
         Err(e) => panic!("Couldn't initialize database: {e}")
     };
     println!("Connected to database");
-    let mess_routes = routes::mess::get_routes();
     let bus_routes = routes::bus::get_routes();
+    let events_routes = routes::events::get_routes();
+    let mess_routes = routes::mess::get_routes();
+    let outlets_routes = routes::outlets::get_routes();
     let router = Router::new()
         .route("/", get(async || {"Go to /api-docs for API Documentation"}))
-        .merge(mess_routes)
         .merge(bus_routes)
+        .merge(events_routes)
+        .merge(mess_routes)
+        .merge(outlets_routes)
         .with_state(pool);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3700").await.unwrap();
     axum::serve(listener, router).await.unwrap();

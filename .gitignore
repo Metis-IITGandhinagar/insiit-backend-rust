@@ -1,3 +1,4 @@
 /target
 .env
 /rustc-ice*
+.DS_Store

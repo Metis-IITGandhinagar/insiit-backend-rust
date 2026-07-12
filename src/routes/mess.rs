@@ -1,5 +1,4 @@
-use axum::{ extract::{ Json, State }, routing::{ Router, get, post }, http::{ Request, Response, StatusCode }, response::Json as JsonResponse };
-use serde::{ Serialize, Deserialize };
+use axum::{ extract::{ Json, State }, routing::{ Router, get, post }, http::StatusCode, response::Json as JsonResponse };
 use sqlx::{ PgPool, query, query_as };
 
 use crate::schemas::mess_schemas::{ MessMenuEntry, MessMenu };
@@ -16,19 +15,22 @@ async fn get_mess_menu(State(pool): State<PgPool>) -> Result<JsonResponse<MessMe
     )
         .fetch_all(&pool).await {
             Ok(mess_menu) => Ok(Json(mess_menu)),
-            Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't get mess_menu from database")))
+            Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't get mess_menu from database")))
         }
 }
 
 async fn add_mess_menu(State(pool): State<PgPool>, Json(mess_menu): Json<MessMenu>) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
-    match query(
-        "DELETE * FROM mess"
-    )
-        .execute(&pool)
-        .await {
-            Ok(_) => {},
-            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update mess_menu to database")))
-        }
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Failed to connect to database"))),
+    };
+
+    if let Err(_) = query("TRUNCATE TABLE mess;")
+        .execute(&mut *tx)
+        .await
+    {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't clear old mess_menu")));
+    }
     for entry in &mess_menu {
         match query(
             "INSERT INTO mess(day, breakfast, lunch, snacks, dinner) VALUES($1, $2, $3, $4, $5)"
@@ -41,7 +43,7 @@ async fn add_mess_menu(State(pool): State<PgPool>, Json(mess_menu): Json<MessMen
             .execute(&pool)
             .await {
                 Ok(_) => {},
-                Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update mess_menu to database")))
+                Err(_e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update mess_menu to database")))
             }
     }
     Ok(Json(mess_menu))
