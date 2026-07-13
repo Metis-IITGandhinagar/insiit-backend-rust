@@ -1,13 +1,18 @@
 // Comment out the following line when building for production
-// #![allow(unused)]
+#![allow(unused)]
+
+use axum::{ extract::FromRef, routing::{ Router, get } };
+use rs_firebase_admin_sdk::App;
+use std::sync::Arc;
+use rs_firebase_admin_sdk::{ auth::FirebaseAuth, client::ReqwestApiClient };
+use sqlx::{ postgres::PgPoolOptions, PgPool };
+use std::env::var;
 
 
-use axum::{ routing::{ Router, get } };
+mod auth;
 mod helpers;
 mod routes;
 mod schemas;
-use sqlx::{ postgres::PgPoolOptions };
-use std::env::var;
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +21,8 @@ async fn main() {
         Ok(v) => v,
         Err(e) => panic!("Couldn't get all the environment variables: {e}")
     };
+
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(env_vars.postgres_url.as_str()).await.expect("Couldn't connect to database");
@@ -24,17 +31,28 @@ async fn main() {
         Err(e) => panic!("Couldn't initialize database: {e}")
     };
     println!("Connected to database");
+
+    let firebase_app = match App::live().await {
+        Ok(app) => app,
+        Err(e) => panic!("Couldn't connect to firebase project: {e}. Check README.md for steps")
+    };
+
+    let firebase_auth_service = firebase_app.auth();
+    let state = AppState { pool: pool.clone(), firebase_auth_service: Arc::from(firebase_auth_service) };
+
+    let admin_routes = routes::admin::get_routes();
     let bus_routes = routes::bus::get_routes();
     let events_routes = routes::events::get_routes();
     let mess_routes = routes::mess::get_routes();
     let outlets_routes = routes::outlets::get_routes();
     let router = Router::new()
         .route("/", get(async || {"Go to /api-docs for API Documentation"}))
+        .merge(admin_routes)
         .merge(bus_routes)
         .merge(events_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
-        .with_state(pool);
+        .with_state(state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3700").await.unwrap();
     axum::serve(listener, router).await.unwrap();
 }
@@ -51,5 +69,12 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
 
 struct EnvironmentVariables {
     postgres_url: String
+}
+
+
+#[derive(Clone, FromRef)]
+pub struct AppState {
+    pool: PgPool,
+    firebase_auth_service: Arc<FirebaseAuth<ReqwestApiClient>>
 }
 
