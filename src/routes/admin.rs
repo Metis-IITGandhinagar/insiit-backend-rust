@@ -28,7 +28,7 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
     };
     match query(
-        "INSERT INTO admins(email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"
+        "INSERT INTO admins(email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"
     )
         .bind(&admin.email)
         .bind(&admin.permissions.get_admin)

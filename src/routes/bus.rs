@@ -20,7 +20,7 @@ async fn get_bus(State(state): State<AppState>) -> Result<JsonResponse<Vec<BusEn
     )
         .fetch_all(&state.pool).await {
             Ok(bus_schedule) => Ok(Json(bus_schedule)),
-            Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn' get bus_schedule from database")))
+            Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't get bus_schedule from database")))
         }
 }
 

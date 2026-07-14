@@ -18,7 +18,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_events(State(state): State<AppState>) -> Result<JsonResponse<Vec<EventEntry>>, (StatusCode, String)> {
     match query_as::<_, EventEntry>(
-        "SELECT id, name, poster_base64, added_by_email, address, start_datetime WHERE start_datetime > $1"
+        "SELECT id, name, poster_base64, added_by_email, address, start_datetime FROM events WHERE start_datetime > $1"
     )
         .bind(OffsetDateTime::now_utc())
         .fetch_all(&state.pool).await {
@@ -29,7 +29,7 @@ async fn get_events(State(state): State<AppState>) -> Result<JsonResponse<Vec<Ev
 
 async fn get_event(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
     match query_as::<_, EventEntry>(
-        "SELECT id, name, description, poster_base64, added_by_email, address, start_datetime WHERE id = $1"
+        "SELECT id, name, description, poster_base64, added_by_email, address, start_datetime FROM events WHERE id = $1"
     )
         .bind(id)
         .fetch_one(&state.pool).await {
@@ -44,8 +44,14 @@ async fn add_event(State(state): State<AppState>, request: Request) -> Result<Js
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
     };
     match query(
-        "INSERT INTO events(name, description, ,poster_base64, added_by_email, address, start_datetime)"
+        "INSERT INTO events(name, description, poster_base64, added_by_email, address, start_datetime) VALUES($1, $2, $3, $4, $5, $6)"
     )
+        .bind(&event.name)
+        .bind(&event.description)
+        .bind(&event.poster_base64)
+        .bind(&event.added_by_email)
+        .bind(&event.address)
+        .bind(&event.start_datetime)
         .execute(&state.pool).await {
             Ok(_) => Ok(Json(event)),
             Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't add event to database")))

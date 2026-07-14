@@ -7,7 +7,7 @@ pub struct EventEntry {
     #[serde(skip_deserializing)]
     pub id: i32,
     pub name: String,
-    pub desription: Option<String>,
+    pub description: Option<String>,
     pub poster_base64: Option<String>,
     pub added_by_email: String,
     pub address: Option<String>,

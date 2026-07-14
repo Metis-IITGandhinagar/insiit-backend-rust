@@ -27,8 +27,8 @@ pub struct AdminPermissions {
     pub put_outlet: bool
 }
 
-#[derive(sqlx::Type, Clone, Debug)]
-#[sqlx(type_name = "VARCHAR", rename_all = "snake_case")]
+#[derive(Clone, Debug, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum AdminPermission {
     GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, DeleteEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet
 }
@@ -47,14 +47,12 @@ impl AdminPermission {
             Some(email) => email,
             None => { return Err(String::from("Invalid user")) }
         };
-        match query_as::<_, (bool,)>(
-            "SELECT $1 FROM admins WHERE email = $2"
-        )
-            .bind(self)
+        let sql = format!("SELECT {} FROM admins WHERE email = $1", self);
+        match query_as::<_, (bool,)>(sqlx::AssertSqlSafe(sql))
             .bind(email)
             .fetch_one(pool).await {
                 Ok(p) => return Ok(p.0),
-                Err(_e) => return Err(String::from("Hi"))
+                Err(_e) => return Err(String::from("Couldn't check permission in database"))
             };
     }
 }
