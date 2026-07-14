@@ -47,11 +47,14 @@ async fn add_mess_menu(State(state): State<AppState>, request: Request) -> Resul
             .bind(&entry.lunch)
             .bind(&entry.snacks)
             .bind(&entry.dinner)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await {
                 Ok(_) => {},
                 Err(_e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update mess_menu to database")))
             }
     }
-    Ok(Json(mess_menu))
+    match tx.commit().await {
+        Ok(_) => Ok(Json(mess_menu)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to commit: {e}"))),
+    }
 }

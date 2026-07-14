@@ -36,9 +36,20 @@ async fn main() {
         Ok(app) => app,
         Err(e) => panic!("Couldn't connect to firebase project: {e}. Check README.md for steps")
     };
+    println!("Connected to firebase project");
+
+    let firebase_token_validator = Arc::new(
+        rs_firebase_admin_sdk::jwt::LiveValidator::new_jwt_validator(env_vars.firebase_project_id.clone())
+            .expect("Couldn't create LiveValidator")
+    );
+    println!("Created firebase token validator");
 
     let firebase_auth_service = firebase_app.auth();
-    let state = AppState { pool: pool.clone(), firebase_auth_service: Arc::from(firebase_auth_service) };
+    let state = AppState {
+        pool: pool.clone(),
+        firebase_auth_service: Arc::from(firebase_auth_service),
+        firebase_token_validator,
+    };
 
     let admin_routes = routes::admin::get_routes();
     let bus_routes = routes::bus::get_routes();
@@ -58,23 +69,29 @@ async fn main() {
 }
 
 fn get_env_vars() -> Result<EnvironmentVariables, String> {
-    let mut env_vars = EnvironmentVariables { postgres_url: String::new() };
+    let mut env_vars = EnvironmentVariables { postgres_url: String::new(), firebase_project_id: String::new() };
     match var("POSTGRES_URL") {
         Ok(v) => env_vars.postgres_url = v,
         Err(e) =>  return Err(format!("Couldn't get environment variable POSTGRES_URL: {e}"))
+    }
+    match var("GOOGLE_CLOUD_PROJECT") {
+        Ok(v) => env_vars.firebase_project_id = v,
+        Err(e) =>  return Err(format!("Couldn't get environment variable GOOGLE_CLOUD_PROJECT: {e}"))
     }
     Ok(env_vars)
 
 }
 
 struct EnvironmentVariables {
-    postgres_url: String
+    postgres_url: String,
+    firebase_project_id: String
 }
 
 
 #[derive(Clone, FromRef)]
 pub struct AppState {
     pool: PgPool,
-    firebase_auth_service: Arc<FirebaseAuth<ReqwestApiClient>>
+    firebase_auth_service: Arc<FirebaseAuth<ReqwestApiClient>>,
+    pub firebase_token_validator: Arc<rs_firebase_admin_sdk::jwt::LiveValidator>
 }
 

@@ -1,4 +1,3 @@
-use rs_firebase_admin_sdk::{ auth::{ FirebaseAuthService, UserIdentifiers } };
 use serde::{ Serialize, Deserialize };
 use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, query_as };
 
@@ -36,16 +35,19 @@ pub enum AdminPermission {
 impl AdminPermission {
     // pub async fn granted_to(&self, token: String, auth: rs_firebase_admin_sdk::auth::FirebaseAuth<ReqwestApiClient>, pool: &PgPool) -> Result<bool, String> {
     pub async fn granted_to(&self, token: String, state: AppState) -> Result<bool, String> {
-        let auth = state.firebase_auth_service;
+        use rs_firebase_admin_sdk::jwt::TokenValidator;
+        let validator = state.firebase_token_validator;
         let pool = &state.pool;
-        let user = match auth.get_user(UserIdentifiers::builder().with_uid(token).build()).await {
-            Ok(Some(user)) => user,
-            Ok(None) => { return Err(String::from("Could not authorize user")) }
-            Err(_e) => { return Err(String::from("Could not authorize user")) }
+        let user = match validator.clone().validate(token).await {
+            Ok(user) => user,
+            Err(_) => return Err(String::from("Could not authorize user"))
         };
-        let email = match user.email {
-            Some(email) => email,
-            None => { return Err(String::from("Invalid user")) }
+        let email = match user.get("email") {
+            Some(value) => match value.as_str() {
+                Some(email) => email,
+                None => return Err(String::from("Invalid user")),
+            },
+            None => return Err(String::from("Invalid user")),
         };
         let sql = format!("SELECT {} FROM admins WHERE email = $1", self);
         match query_as::<_, (bool,)>(sqlx::AssertSqlSafe(sql))
