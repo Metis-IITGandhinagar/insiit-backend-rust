@@ -1,14 +1,16 @@
-use axum::{ extract::{ Json, Path, State }, routing:: { Router, get, post }, http::StatusCode, response::Json as JsonResponse };
-use sqlx::{ PgPool, query, query_as };
+use axum::{ extract::{ FromRequest, Json, Path, Request, State }, routing:: { Router, get, post }, http::StatusCode, response::Json as JsonResponse };
+use sqlx::{ query, query_as };
 
 use crate::AppState;
+use crate::auth::verify_and_execute;
+use crate::schemas::admin_schemas::AdminPermission;
 use crate::schemas::outlets_schemas::Outlet;
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/outlets/{id}", get(get_outlet))
         .route("/outlets", get(get_outlets))
-        .route("/outlets", post(add_outlet))
+        .route("/outlets", post(verify_and_execute(AdminPermission::PostOutlet, add_outlet)))
 }
 
 async fn get_outlets(State(state): State<AppState>) -> Result<JsonResponse<Vec<Outlet>>, (StatusCode, String)> {
@@ -33,7 +35,11 @@ async fn get_outlet(State(state): State<AppState>, Path(id): Path<i32>) -> Resul
         }
 }
 
-async fn add_outlet(State(state): State<AppState>, Json(outlet): Json<Outlet>) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
+async fn add_outlet(State(state): State<AppState>, request: Request) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
+    let Json(outlet) = match Json::<Outlet>::from_request(request, &state).await {
+        Ok(outlet) => outlet,
+        Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
+    };
     match query(
         "INSERT INTO outlets (name, latitude, longitude, landmark, open_time, close_time, menu, base64_image) VALUES($1, $2, $3, $3, $4, $5, $5::jsonb, $6)"
     )

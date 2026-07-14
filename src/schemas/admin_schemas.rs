@@ -1,15 +1,17 @@
-use rs_firebase_admin_sdk::{ auth::{ FirebaseAuth, FirebaseAuthService, UserIdentifiers }, client::ReqwestApiClient };
+use rs_firebase_admin_sdk::{ auth::{ FirebaseAuthService, UserIdentifiers } };
 use serde::{ Serialize, Deserialize };
 use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, query_as };
 
-#[derive(Serialize, Deserialize, FromRow)]
+use crate::AppState;
+
+#[derive(Serialize, Deserialize, FromRow, Default)]
 pub struct AdminEntry {
     pub email: String,
     #[sqlx(flatten)]
     pub permissions: AdminPermissions,
 }
 
-#[derive(Serialize, Deserialize, FromRow)]
+#[derive(Clone, Serialize, Deserialize, FromRow, Default)]
 pub struct AdminPermissions {
     pub get_admin: bool,
     pub post_admin: bool,
@@ -25,14 +27,17 @@ pub struct AdminPermissions {
     pub put_outlet: bool
 }
 
-#[derive(sqlx::Type, Debug)]
+#[derive(sqlx::Type, Clone, Debug)]
 #[sqlx(type_name = "VARCHAR", rename_all = "snake_case")]
 pub enum AdminPermission {
     GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, DeleteEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet
 }
 
 impl AdminPermission {
-    pub async fn granted_to(&self, token: String, auth: rs_firebase_admin_sdk::auth::FirebaseAuth<ReqwestApiClient>, pool: &PgPool) -> Result<bool, String> {
+    // pub async fn granted_to(&self, token: String, auth: rs_firebase_admin_sdk::auth::FirebaseAuth<ReqwestApiClient>, pool: &PgPool) -> Result<bool, String> {
+    pub async fn granted_to(&self, token: String, state: AppState) -> Result<bool, String> {
+        let auth = state.firebase_auth_service;
+        let pool = &state.pool;
         let user = match auth.get_user(UserIdentifiers::builder().with_uid(token).build()).await {
             Ok(Some(user)) => user,
             Ok(None) => { return Err(String::from("Could not authorize user")) }
@@ -51,7 +56,6 @@ impl AdminPermission {
                 Ok(p) => return Ok(p.0),
                 Err(_e) => return Err(String::from("Hi"))
             };
-        Ok(true)
     }
 }
 

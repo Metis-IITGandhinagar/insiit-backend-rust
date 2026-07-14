@@ -1,14 +1,33 @@
-use axum::{ extract:: { Json, Request, State }, http::StatusCode, response::Json as JsonResponse, response::Response, middleware::{ self, Next } };
-use rs_firebase_admin_sdk::{ auth::FirebaseAuth, client::ReqwestApiClient };
+use axum::{ extract:: { FromRequestParts, Request, State }, http::StatusCode, response::IntoResponse };
 use axum_extra::{ headers:: { authorization::Bearer, Authorization }, TypedHeader };
-use sqlx::PgPool;
+use std::{ future::Future, pin::Pin };
 
-use crate::schemas::admin_schemas::{ AdminEntry, AdminPermission, AdminPermissions };
+use crate::AppState;
+use crate::schemas::admin_schemas::{ AdminPermission };
 
-pub async fn check_permission(TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, State(pool): State<PgPool>, State(permission): State<AdminPermission>, State(auth_service): State<FirebaseAuth<ReqwestApiClient>>, request: Request, next: Next) -> Result<Response, (StatusCode, String)> {
-    match permission.granted_to(auth_header.token().to_string(), auth_service, &pool).await {
-        Ok(true) => Ok(next.run(request).await),
-        Ok(false) => Err((StatusCode::UNAUTHORIZED, String::from("Unauthorized"))),
-        _ => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't authorize user")))
+pub fn verify_and_execute<H, F, K>(
+    permission: AdminPermission,
+    handler: H
+) -> impl Clone + Fn(State<AppState>, Request) -> Pin<Box<dyn Future<Output = Result<K, (StatusCode, String)>> + Send>>
+where
+    H: Fn(State<AppState>, Request) -> F + Clone + Send + Sync + 'static,
+    K: IntoResponse,
+    F: Future<Output = Result<K, (StatusCode, String)>> + Send + 'static, {
+        move |State(state): State<AppState>, request: Request| {
+            let handler = handler.clone();
+            let state_clone = state.clone();
+            let permission_clone = permission.clone();
+            let (mut parts, body) = request.into_parts();
+            Box::pin(async move {
+                let auth_header = match TypedHeader::<Authorization<Bearer>>::from_request_parts(&mut parts, &state_clone).await {
+                    Ok(auth_header) => auth_header,
+                    Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid token")))
+                };
+                match permission_clone.granted_to(auth_header.token().to_string(), state_clone.clone()).await {
+                    Ok(true) => handler(State(state_clone), Request::from_parts(parts, body)).await,
+                    Ok(false) => Err((StatusCode::FORBIDDEN, String::from("Forbidden"))),
+                    _ => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't authenticate user")))
+                }
+            })
+        }
     }
-}

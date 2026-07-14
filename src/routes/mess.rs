@@ -1,13 +1,15 @@
-use axum::{ extract::{ Json, State }, routing::{ Router, get, post }, http::StatusCode, response::Json as JsonResponse };
-use sqlx::{ PgPool, query, query_as };
+use axum::{ extract::{ FromRequest, Json, Request, State }, routing:: { Router, get, post }, http::StatusCode, response::Json as JsonResponse };
+use sqlx::{ query, query_as };
 
 use crate::AppState;
+use crate::auth::verify_and_execute;
+use crate::schemas::admin_schemas::AdminPermission;
 use crate::schemas::mess_schemas::{ MessMenuEntry, MessMenu };
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/mess", get(get_mess_menu))
-        .route("/mess", post(add_mess_menu))
+        .route("/mess", post(verify_and_execute(AdminPermission::PostMessMenu, add_mess_menu)))
 }
 
 async fn get_mess_menu(State(state): State<AppState>) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
@@ -20,7 +22,11 @@ async fn get_mess_menu(State(state): State<AppState>) -> Result<JsonResponse<Mes
         }
 }
 
-async fn add_mess_menu(State(state): State<AppState>, Json(mess_menu): Json<MessMenu>) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
+async fn add_mess_menu(State(state): State<AppState>, request: Request) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
+    let Json(mess_menu) = match Json::<MessMenu>::from_request(request, &state).await {
+        Ok(mess_menu) => mess_menu,
+        Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
+    };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Failed to connect to database"))),

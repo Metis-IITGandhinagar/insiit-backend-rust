@@ -1,5 +1,5 @@
 // Comment out the following line when building for production
-#![allow(unused)]
+// #![allow(unused)]
 
 use axum::{ extract::FromRef, routing::{ Router, get } };
 use rs_firebase_admin_sdk::App;
