@@ -12,5 +12,6 @@ pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     events_schemas::initialize_table(pool).await.expect("Couldn't initialize events table");
     mess_schemas::initialize_table(pool).await.expect("Couldn't initialize mess table");
     outlets_schemas::initialize_table(pool).await.expect("Couldn't initialize outlets table");
+    log::info!("Created all required tables");
     Ok(())
 }

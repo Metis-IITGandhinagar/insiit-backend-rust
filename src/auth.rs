@@ -26,7 +26,10 @@ where
                 match permission_clone.granted_to(auth_header.token().to_string(), state_clone.clone()).await {
                     Ok(true) => handler(State(state_clone), Request::from_parts(parts, body)).await,
                     Ok(false) => Err((StatusCode::FORBIDDEN, String::from("Forbidden"))),
-                    _ => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't authenticate user")))
+                    Err(e) => {
+                        log::error!("Couldn't authenticate user {e}");
+                        return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't authenticate user")));
+                    }
                 }
             })
         }

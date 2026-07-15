@@ -16,6 +16,10 @@ mod schemas;
 
 #[tokio::main]
 async fn main() {
+    let _ = simplelog::WriteLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default(), std::fs::File::create("insiit-backend-rust.logs").expect("Permission denied to use ./insiit-backend-rust.logs"));
+
+
+
     dotenvy::dotenv().ok();
     let env_vars = match get_env_vars() {
         Ok(v) => v,
@@ -27,22 +31,22 @@ async fn main() {
         .max_connections(5)
         .connect(env_vars.postgres_url.as_str()).await.expect("Couldn't connect to database");
     match helpers::initialize_database(&pool).await {
-        Ok(_) => println!("Successfully initialized database"),
+        Ok(_) => log::info!("Successfully initialized database"),
         Err(e) => panic!("Couldn't initialize database: {e}")
     };
-    println!("Connected to database");
+    log::info!("Connected to database");
 
     let firebase_app = match App::live().await {
         Ok(app) => app,
         Err(e) => panic!("Couldn't connect to firebase project: {e}. Check README.md for steps")
     };
-    println!("Connected to firebase project");
+    log::info!("Connected to firebase project");
 
     let firebase_token_validator = Arc::new(
         rs_firebase_admin_sdk::jwt::LiveValidator::new_jwt_validator(env_vars.firebase_project_id.clone())
             .expect("Couldn't create LiveValidator")
     );
-    println!("Created firebase token validator");
+    log::info!("Created firebase token validator");
 
     let firebase_auth_service = firebase_app.auth();
     let state = AppState {

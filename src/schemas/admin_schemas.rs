@@ -1,3 +1,4 @@
+use rs_firebase_admin_sdk::jwt::TokenValidator;
 use serde::{ Serialize, Deserialize };
 use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, query_as };
 
@@ -33,14 +34,15 @@ pub enum AdminPermission {
 }
 
 impl AdminPermission {
-    // pub async fn granted_to(&self, token: String, auth: rs_firebase_admin_sdk::auth::FirebaseAuth<ReqwestApiClient>, pool: &PgPool) -> Result<bool, String> {
     pub async fn granted_to(&self, token: String, state: AppState) -> Result<bool, String> {
-        use rs_firebase_admin_sdk::jwt::TokenValidator;
         let validator = state.firebase_token_validator;
         let pool = &state.pool;
         let user = match validator.clone().validate(token).await {
             Ok(user) => user,
-            Err(_) => return Err(String::from("Could not authorize user"))
+            Err(e) => {
+                log::error!("Failed to authorize user: {e}");
+                return Err(String::from("Could not authorize user"))
+            }
         };
         let email = match user.get("email") {
             Some(value) => match value.as_str() {
@@ -49,12 +51,18 @@ impl AdminPermission {
             },
             None => return Err(String::from("Invalid user")),
         };
+        // Check if this query breaks, cause if admin doesn't exist, then bool value may not be
+        // fetched from the db and it may return Err, and return internal server error to client
+        // rather than forbidden
         let sql = format!("SELECT {} FROM admins WHERE email = $1", self);
         match query_as::<_, (bool,)>(sqlx::AssertSqlSafe(sql))
             .bind(email)
             .fetch_one(pool).await {
                 Ok(p) => return Ok(p.0),
-                Err(_e) => return Err(String::from("Couldn't check permission in database"))
+                Err(e) => {
+                    log::error!("Failed to execute query {e}");
+                    return Err(String::from("Couldn't check permission in database"));
+                }
             };
     }
 }
