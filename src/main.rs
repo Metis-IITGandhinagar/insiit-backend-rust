@@ -68,12 +68,12 @@ async fn main() {
         .merge(mess_routes)
         .merge(outlets_routes)
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3700").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env_vars.port)).await.unwrap();
     axum::serve(listener, router).await.unwrap();
 }
 
 fn get_env_vars() -> Result<EnvironmentVariables, String> {
-    let mut env_vars = EnvironmentVariables { postgres_url: String::new(), firebase_project_id: String::new() };
+    let mut env_vars = EnvironmentVariables { postgres_url: String::new(), firebase_project_id: String::new(), port: String::new() };
     match var("POSTGRES_URL") {
         Ok(v) => env_vars.postgres_url = v,
         Err(e) =>  return Err(format!("Couldn't get environment variable POSTGRES_URL: {e}"))
@@ -82,13 +82,18 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
         Ok(v) => env_vars.firebase_project_id = v,
         Err(e) =>  return Err(format!("Couldn't get environment variable GOOGLE_CLOUD_PROJECT: {e}"))
     }
+    match var("PORT") {
+        Ok(v) => env_vars.port = v,
+        Err(e) =>  return Err(format!("Couldn't get environment variable GOOGLE_CLOUD_PROJECT: {e}"))
+    }
     Ok(env_vars)
 
 }
 
 struct EnvironmentVariables {
     postgres_url: String,
-    firebase_project_id: String
+    firebase_project_id: String,
+    port: String
 }
 
 
