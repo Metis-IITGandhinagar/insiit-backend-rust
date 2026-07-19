@@ -8,8 +8,8 @@ use crate::schemas::mess_schemas::{ MessMenuEntry, MessMenu };
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
-        .route("/mess", get(get_mess_menu))
-        .route("/mess", post(verify_and_execute(AdminPermission::PostMessMenu, add_mess_menu)))
+        .route("/mess-menu", get(get_mess_menu))
+        .route("/mess-menu", post(verify_and_execute(AdminPermission::PostMessMenu, add_mess_menu)))
 }
 
 async fn get_mess_menu(State(state): State<AppState>) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
