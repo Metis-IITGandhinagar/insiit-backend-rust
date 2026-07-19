@@ -1,5 +1,5 @@
 // Comment out the following line when building for production
-// #![allow(unused)]
+#![allow(unused)]
 
 use axum::{ extract::FromRef, routing::{ Router, get } };
 use rs_firebase_admin_sdk::App;
@@ -13,6 +13,7 @@ mod auth;
 mod helpers;
 mod routes;
 mod schemas;
+pub mod utils;
 
 #[tokio::main]
 async fn main() {
@@ -58,6 +59,7 @@ async fn main() {
     let admin_routes = routes::admin::get_routes();
     let bus_routes = routes::bus::get_routes();
     let events_routes = routes::events::get_routes();
+    let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
     let outlets_routes = routes::outlets::get_routes();
     let router = Router::new()
@@ -65,6 +67,7 @@ async fn main() {
         .merge(admin_routes)
         .merge(bus_routes)
         .merge(events_routes)
+        .merge(lost_found_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
         .with_state(state);
