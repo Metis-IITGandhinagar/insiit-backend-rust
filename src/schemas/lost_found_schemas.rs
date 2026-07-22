@@ -2,8 +2,6 @@ use serde::{ Serialize, Deserialize };
 use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, Type };
 use time::OffsetDateTime;
 
-// WARNING / BUG: status has skip_deserializing, but it's an enum without default value. In the
-// routes file, check what value comes when a request is sent.
 #[derive(Serialize, Deserialize, FromRow)]
 pub struct LostFoundEntry {
     pub id: i32,
