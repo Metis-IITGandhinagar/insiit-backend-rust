@@ -7,6 +7,7 @@ use std::sync::Arc;
 use rs_firebase_admin_sdk::{ auth::FirebaseAuth, client::ReqwestApiClient };
 use sqlx::{ postgres::PgPoolOptions, PgPool };
 use std::env::var;
+use tower_http::cors::CorsLayer;
 
 
 mod auth;
@@ -55,9 +56,11 @@ async fn main() {
         firebase_auth_service: Arc::from(firebase_auth_service),
         firebase_token_validator,
     };
+    let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
     let bus_routes = routes::bus::get_routes();
+    let buy_sell_routes = routes::bus::get_routes();
     let events_routes = routes::events::get_routes();
     let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
@@ -66,10 +69,12 @@ async fn main() {
         .route("/", get(async || {"Go to /api-docs for API Documentation"}))
         .merge(admin_routes)
         .merge(bus_routes)
+        .merge(buy_sell_routes)
         .merge(events_routes)
         .merge(lost_found_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
+        .layer(cors)
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env_vars.port)).await.unwrap();
     axum::serve(listener, router).await.unwrap();
