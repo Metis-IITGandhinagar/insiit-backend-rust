@@ -60,7 +60,7 @@ async fn main() {
 
     let admin_routes = routes::admin::get_routes();
     let bus_routes = routes::bus::get_routes();
-    let buy_sell_routes = routes::bus::get_routes();
+    let buy_sell_routes = routes::buy_sell::get_routes();
     let events_routes = routes::events::get_routes();
     let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
