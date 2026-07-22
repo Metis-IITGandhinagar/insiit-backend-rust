@@ -11,8 +11,8 @@ use crate::schemas::lost_found_schemas::{ LostFoundEntry, LostFoundRequest, Lost
 pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/lost-found", get(get_all_lost_found))
-        .route("/lost-found/:id", get(get_lost_found_by_id))
-        .route("/lost-found/:id", delete(delete_lost_found))
+        .route("/lost-found/{id}", get(get_lost_found_by_id))
+        .route("/lost-found/{id}", delete(delete_lost_found))
         .route("/lost-found", put(edit_lost_found))
         .route("/lost-found", post(add_lost_found))
         .route("/lost-found/claim-found", post(claim_found))

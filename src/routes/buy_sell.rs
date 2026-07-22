@@ -11,8 +11,8 @@ use crate::schemas::buy_sell_schemas::{ BuySellEntry, BuySellRequest, BuySellSta
 pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/buy-sell", get(get_all_buy_sell))
-        .route("/buy-sell/:id", get(get_buy_sell_by_id))
-        .route("/buy-sell/:id", delete(delete_buy_sell))
+        .route("/buy-sell/{id}", get(get_buy_sell_by_id))
+        .route("/buy-sell/{id}", delete(delete_buy_sell))
         .route("/buy-sell", put(edit_buy_sell))
         .route("/buy-sell", post(add_buy_sell))
         .route("/buy-sell/bid", post(add_bid))
