@@ -10,8 +10,8 @@ use crate::schemas::bus_schemas::BusEntry;
 // TODO: Add logging in Err(e) case. Log to server, don't send them to client
 pub fn get_routes() -> Router<AppState> {
     Router::new()
-        .route("/bus", get(get_bus))
-        .route("/bus", post(verify_and_execute(AdminPermission::PostBusSchedule, add_bus)))
+        .route("/buses", get(get_bus))
+        .route("/buses", post(verify_and_execute(AdminPermission::PostBusSchedule, add_bus)))
 }
 
 async fn get_bus(State(state): State<AppState>) -> Result<JsonResponse<Vec<BusEntry>>, (StatusCode, String)> {
