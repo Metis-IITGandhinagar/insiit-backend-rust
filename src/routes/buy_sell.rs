@@ -25,7 +25,7 @@ async fn get_all_buy_sell(State(state): State<AppState>) -> Result<JsonResponse<
     )
         .fetch_all(&state.pool)
         .await {
-            Ok(buys_sell_entries) => {
+            Ok(buy_sell_entries) => {
                 log::info!("Sending buy sell entries");
                 Ok(Json(buy_sell_entries))
             },
