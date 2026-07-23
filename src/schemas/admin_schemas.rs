@@ -30,7 +30,7 @@ pub struct AdminPermissions {
 #[derive(Clone, Debug, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum AdminPermission {
-    GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, DeleteEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet
+    GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, DeleteEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet, PostAnnouncement
 }
 
 impl AdminPermission {

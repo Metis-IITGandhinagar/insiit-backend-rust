@@ -8,3 +8,7 @@ Things remaining:
 
 
 1. Routes for OLX, Lost and Found and Cab sharing
+
+
+Fix all the warnings and todos and bugs in code
+fix utils::save_image
