@@ -13,7 +13,7 @@ pub fn get_routes() -> Router<AppState> {
         .route("/buy-sell", get(get_all_buy_sell))
         .route("/buy-sell/{id}", get(get_buy_sell_by_id))
         .route("/buy-sell/{id}", delete(delete_buy_sell))
-        .route("/buy-sell", put(edit_buy_sell))
+        .route("/buy-sell/{id}", put(edit_buy_sell))
         .route("/buy-sell", post(add_buy_sell))
         .route("/buy-sell/bid", post(add_bid))
         .route("/buy-sell/mark-sold", put(mark_sold))
@@ -106,7 +106,7 @@ async fn add_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): T
         }
 }
 
-async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(buy_sell_entry): Json<BuySellEntry>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)>{
+async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>, Json(buy_sell_entry): Json<BuySellRequest>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)>{
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
@@ -127,15 +127,14 @@ async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): 
     };
     match query_as::<_, BuySellEntry>(
         "UPDATE buysellentries
-        SET item_name = $1, description = $2, img_urls = $3
-        WHERE id = $4 AND added_by_email = $5
+        SET item_name = $1, description = $2
+        WHERE id = $3 AND added_by_email = $4
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls
         "
     )
         .bind(&buy_sell_entry.item_name)
         .bind(&buy_sell_entry.description)
-        .bind(&buy_sell_entry.img_urls)
-        .bind(&buy_sell_entry.id)
+        .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_buy_sell_entry) => {

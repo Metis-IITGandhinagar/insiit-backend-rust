@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod annoucements;
 pub mod bus;
 pub mod buy_sell;
 pub mod events;
