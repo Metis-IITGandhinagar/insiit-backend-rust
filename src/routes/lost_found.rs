@@ -21,7 +21,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonResponse<Vec<LostFoundEntry>>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE item_status = 'lost'"
     )
         .fetch_all(&state.pool)
         .await {
@@ -38,7 +38,7 @@ async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonRespons
 
 async fn get_lost_found_by_id(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE id = $1"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, item_status, img_urls FROM lostfoundentries WHERE id = $1"
     )
         .bind(id)
         .fetch_one(&state.pool).await {
@@ -80,7 +80,7 @@ async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header):
     let mut img_urls = vec![];
     for img in &lost_found_request.base64_images {
         // WARNING: Fix this
-        let url = crate::utils::save_image(img).await.unwrap();
+        let url = crate::utils::save_image(img, &state.image_directory).await.unwrap();
         img_urls.push(url);
     }
 

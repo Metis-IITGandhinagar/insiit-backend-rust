@@ -110,7 +110,7 @@ async fn edit_announcement(State(state): State<AppState>, TypedHeader(auth_heade
     };
 
     let img_url = if let Some(img_base64) = &announcement_request.img_base64 {
-        match save_image(img_base64).await {
+        match save_image(img_base64, &state.image_directory).await {
             Ok(url) => Some(url),
             Err(e) => {
                 // TODO log error properly
@@ -158,13 +158,13 @@ async fn add_announcement(State(state): State<AppState>, request: Request) -> Re
     // WARNING/FIX/TODO, implement the save_image function properly and don't use unwrap.
     let mut img_url = None;
     if let Some(img_base64) = &announcement_request.img_base64 {
-        img_url = Some(crate::utils::save_image(img_base64).await.unwrap());
+        img_url = Some(crate::utils::save_image(img_base64, &state.image_directory).await.unwrap());
     }
 
     match query_as::<_, AnnouncementEntry>(
         "INSERT INTO announcements(title, description, added_on_timestamp, added_by_email, img_url)
         VALUES($1, $2, $3, $4, $5)
-        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_url;
+        RETURNING id, title, description, added_on_timestamp, added_by_email, img_url;
         "
     )
         .bind(&announcement_request.title)
@@ -179,7 +179,7 @@ async fn add_announcement(State(state): State<AppState>, request: Request) -> Re
                 Ok(Json(announcement))
             },
             Err(e) => {
-                log::error!("BuySell: Error adding buy_sell_entry: {e}");
+                log::error!("Announcement: Error adding announcement_entry: {e}");
                 Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't add buy sell entry in the database")))
             }
         }

@@ -21,7 +21,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_all_buy_sell(State(state): State<AppState>) -> Result<JsonResponse<Vec<BuySellEntry>>, (StatusCode, String)> {
     match query_as::<_, BuySellEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries WHERE status = 'selling'"
     )
         .fetch_all(&state.pool)
         .await {
@@ -79,7 +79,7 @@ async fn add_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): T
     let timestamp = OffsetDateTime::now_utc();
     let mut img_urls = vec![];
     for img in &buy_sell_request.base64_images {
-        let url = crate::utils::save_image(img).await.unwrap();
+        let url = crate::utils::save_image(img, &state.image_directory).await.unwrap();
         img_urls.push(url);
     }
 

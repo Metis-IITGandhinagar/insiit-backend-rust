@@ -24,7 +24,8 @@ pub struct AdminPermissions {
     pub post_mess_menu: bool,
     pub post_outlet: bool,
     pub delete_outlet: bool,
-    pub put_outlet: bool
+    pub put_outlet: bool,
+    pub post_announcement: bool,
 }
 
 #[derive(Clone, Debug, strum::Display)]
@@ -83,7 +84,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             post_mess_menu BOOLEAN NOT NULL DEFAULT FALSE,
             post_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             delete_outlet BOOLEAN NOT NULL DEFAULT FALSE,
-            put_outlet BOOLEAN NOT NULL DEFAULT FALSE
+            put_outlet BOOLEAN NOT NULL DEFAULT FALSE,
+            post_announcement BOOLEAN NOT NULL DEFAULT FALSE
         );"
     )
         .execute(pool)

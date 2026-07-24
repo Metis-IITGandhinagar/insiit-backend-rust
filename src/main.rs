@@ -7,7 +7,7 @@ use std::sync::Arc;
 use rs_firebase_admin_sdk::{ auth::FirebaseAuth, client::ReqwestApiClient };
 use sqlx::{ postgres::PgPoolOptions, PgPool };
 use std::env::var;
-use tower_http::cors::CorsLayer;
+use tower_http::{ cors::CorsLayer, services::ServeDir };
 
 
 mod auth;
@@ -55,10 +55,12 @@ async fn main() {
         pool: pool.clone(),
         firebase_auth_service: Arc::from(firebase_auth_service),
         firebase_token_validator,
+        image_directory: env_vars.image_directory.clone()
     };
     let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
+    let announcement_routes = routes::announcements::get_routes();
     let bus_routes = routes::bus::get_routes();
     let buy_sell_routes = routes::buy_sell::get_routes();
     let events_routes = routes::events::get_routes();
@@ -67,7 +69,9 @@ async fn main() {
     let outlets_routes = routes::outlets::get_routes();
     let router = Router::new()
         .route("/", get(async || {"Go to /api-docs for API Documentation"}))
+        .nest_service("/images", ServeDir::new(&env_vars.image_directory))
         .merge(admin_routes)
+        .merge(announcement_routes)
         .merge(bus_routes)
         .merge(buy_sell_routes)
         .merge(events_routes)
@@ -81,7 +85,7 @@ async fn main() {
 }
 
 fn get_env_vars() -> Result<EnvironmentVariables, String> {
-    let mut env_vars = EnvironmentVariables { postgres_url: String::new(), firebase_project_id: String::new(), port: String::new() };
+    let mut env_vars = EnvironmentVariables { postgres_url: String::new(), firebase_project_id: String::new(), port: String::new(), image_directory: String::new() };
     match var("POSTGRES_URL") {
         Ok(v) => env_vars.postgres_url = v,
         Err(e) =>  return Err(format!("Couldn't get environment variable POSTGRES_URL: {e}"))
@@ -92,7 +96,11 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
     }
     match var("PORT") {
         Ok(v) => env_vars.port = v,
-        Err(e) =>  return Err(format!("Couldn't get environment variable GOOGLE_CLOUD_PROJECT: {e}"))
+        Err(e) =>  return Err(format!("Couldn't get environment variable PORT: {e}"))
+    }
+    match var("IMAGE_DIRECTORY") {
+        Ok(v) => env_vars.image_directory = v,
+        Err(e) => return Err(format!("Couldn't get environment variable IMAGE_DIRECTORY: {e}"))
     }
     Ok(env_vars)
 
@@ -101,7 +109,8 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
 struct EnvironmentVariables {
     postgres_url: String,
     firebase_project_id: String,
-    port: String
+    port: String,
+    image_directory: String
 }
 
 
@@ -109,6 +118,7 @@ struct EnvironmentVariables {
 pub struct AppState {
     pool: PgPool,
     firebase_auth_service: Arc<FirebaseAuth<ReqwestApiClient>>,
-    pub firebase_token_validator: Arc<rs_firebase_admin_sdk::jwt::LiveValidator>
+    pub firebase_token_validator: Arc<rs_firebase_admin_sdk::jwt::LiveValidator>,
+    image_directory: String
 }
 

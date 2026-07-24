@@ -37,7 +37,7 @@ pub struct LostFoundClaim {
 }
 
 #[derive(Type, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
-#[sqlx(type_name = "item_status", rename_all = "snake_case")]
+#[sqlx(type_name = "lost_found_item_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum LostFoundStatus {
     #[default] Lost, Found, ClaimedToBeFound
@@ -46,7 +46,7 @@ pub enum LostFoundStatus {
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
     sqlx::query(
         "DO $$ BEGIN
-            CREATE TYPE item_status as ENUM('lost', 'found', 'claimed_to_be_found');
+            CREATE TYPE lost_found_item_status as ENUM('lost', 'found', 'claimed_to_be_found');
         EXCEPTION
             WHEN duplicate_object THEN null;
         END $$;
@@ -61,7 +61,7 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             description VARCHAR(1023) NOT NULL,
             added_on_timestamp TIMESTAMPTZ NOT NULL,
             added_by_email VARCHAR(255) NOT NULL,
-            status item_status NOT NULL DEFAULT 'lost',
+            status lost_found_item_status NOT NULL DEFAULT 'lost'::lost_found_item_status,
             found_claims JSONB NOT NULL DEFAULT '[]',
             img_urls VARCHAR(255)[] NOT NULL DEFAULT '{}'
         );

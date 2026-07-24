@@ -17,11 +17,14 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_admins(State(state): State<AppState>, _request: Request) -> Result<JsonResponse<Vec<AdminEntry>>, (StatusCode, String)> {
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet FROM admins;"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins;"
     )
         .fetch_all(&state.pool).await {
             Ok(admins) => Ok(Json(admins)),
-            Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't fetch admins from database")))
+            Err(e) => {
+                log::error!("Failed to fetch admins: {e}");
+                Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't fetch admins from database")))
+            }
         }
 }
 
@@ -53,7 +56,7 @@ async fn get_admin_permissions(State(state): State<AppState>, TypedHeader(auth_h
     // fetched from the db and it may return Err, and return internal server error to client
     // rather than forbidden
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlets, delete_outlet, put_outlet FROM admins WHERE email = $1"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlets, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
     )
         .bind(email)
         .fetch_one(&state.pool).await {
@@ -71,7 +74,27 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
     };
     match query(
-        "INSERT INTO admins(email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"
+        "INSERT INTO admins (
+            email, get_admin, post_admin, put_admin, post_bus_schedule,
+            put_bus_schedule, post_event, delete_event, put_event,
+            post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (email)
+        DO UPDATE SET
+            get_admin = EXCLUDED.get_admin,
+            post_admin = EXCLUDED.post_admin,
+            put_admin = EXCLUDED.put_admin,
+            post_bus_schedule = EXCLUDED.post_bus_schedule,
+            put_bus_schedule = EXCLUDED.put_bus_schedule,
+            post_event = EXCLUDED.post_event,
+            delete_event = EXCLUDED.delete_event,
+            put_event = EXCLUDED.put_event,
+            post_mess_menu = EXCLUDED.post_mess_menu,
+            post_outlet = EXCLUDED.post_outlet,
+            delete_outlet = EXCLUDED.delete_outlet,
+            put_outlet = EXCLUDED.put_outlet,
+            post_announcement = EXCLUDED.post_announcement"
     )
         .bind(&admin.email)
         .bind(&admin.permissions.get_admin)
@@ -86,6 +109,7 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
         .bind(&admin.permissions.post_outlet)
         .bind(&admin.permissions.delete_outlet)
         .bind(&admin.permissions.put_outlet)
+        .bind(&admin.permissions.post_announcement)
         .execute(&state.pool).await {
             Ok(_) => Ok(Json(admin)),
             Err(_e) => Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't add admin to admin to the database")))

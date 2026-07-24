@@ -50,7 +50,7 @@ pub struct BidEntry {
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
     sqlx::query(
         "DO $$ BEGIN
-            CREATE TYPE item_status as ENUM('selling', 'sold');
+            CREATE TYPE buy_sell_item_status as ENUM('selling', 'sold');
         EXCEPTION
             WHEN duplicate_object THEN null;
         END $$;
@@ -65,7 +65,7 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             description VARCHAR(1023) NOT NULL,
             added_on_timestamp TIMESTAMPTZ NOT NULL,
             added_by_email VARCHAR(255) NOT NULL,
-            status item_status NOT NULL DEFAULT 'selling',
+            status buy_sell_item_status NOT NULL DEFAULT 'selling'::buy_sell_item_status,
             bids JSONB NOT NULL DEFAULT '[]',
             img_urls VARCHAR(255)[] NOT NULL DEFAULT '{}'
         );
