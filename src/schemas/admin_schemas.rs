@@ -19,7 +19,6 @@ pub struct AdminPermissions {
     pub post_bus_schedule: bool,
     pub put_bus_schedule: bool,
     pub post_event: bool,
-    pub delete_event: bool,
     pub put_event: bool,
     pub post_mess_menu: bool,
     pub post_outlet: bool,
@@ -31,7 +30,7 @@ pub struct AdminPermissions {
 #[derive(Clone, Debug, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum AdminPermission {
-    GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, DeleteEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet, PostAnnouncement
+    GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, PutEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet, PostAnnouncement
 }
 
 impl AdminPermission {
@@ -79,7 +78,6 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             post_bus_schedule BOOLEAN NOT NULL DEFAULT FALSE,
             put_bus_schedule BOOLEAN NOT NULL DEFAULT FALSE,
             post_event BOOLEAN NOT NULL DEFAULT FALSE,
-            delete_event BOOLEAN NOT NULL DEFAULT FALSE,
             put_event BOOLEAN NOT NULL DEFAULT FALSE,
             post_mess_menu BOOLEAN NOT NULL DEFAULT FALSE,
             post_outlet BOOLEAN NOT NULL DEFAULT FALSE,

@@ -17,7 +17,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_admins(State(state): State<AppState>, _request: Request) -> Result<JsonResponse<Vec<AdminEntry>>, (StatusCode, String)> {
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins;"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins;"
     )
         .fetch_all(&state.pool).await {
             Ok(admins) => Ok(Json(admins)),
@@ -56,7 +56,7 @@ async fn get_admin_permissions(State(state): State<AppState>, TypedHeader(auth_h
     // fetched from the db and it may return Err, and return internal server error to client
     // rather than forbidden
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, delete_event, put_event, post_mess_menu, post_outlets, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, put_event, post_mess_menu, post_outlets, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
     )
         .bind(email)
         .fetch_one(&state.pool).await {
@@ -76,7 +76,7 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
     match query(
         "INSERT INTO admins (
             email, get_admin, post_admin, put_admin, post_bus_schedule,
-            put_bus_schedule, post_event, delete_event, put_event,
+            put_bus_schedule, post_event, put_event,
             post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -88,7 +88,6 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
             post_bus_schedule = EXCLUDED.post_bus_schedule,
             put_bus_schedule = EXCLUDED.put_bus_schedule,
             post_event = EXCLUDED.post_event,
-            delete_event = EXCLUDED.delete_event,
             put_event = EXCLUDED.put_event,
             post_mess_menu = EXCLUDED.post_mess_menu,
             post_outlet = EXCLUDED.post_outlet,
@@ -103,7 +102,6 @@ pub async fn add_admin(State(state): State<AppState>, request: Request) -> Resul
         .bind(&admin.permissions.post_bus_schedule)
         .bind(&admin.permissions.put_bus_schedule)
         .bind(&admin.permissions.post_event)
-        .bind(&admin.permissions.delete_event)
         .bind(&admin.permissions.put_event)
         .bind(&admin.permissions.post_mess_menu)
         .bind(&admin.permissions.post_outlet)
