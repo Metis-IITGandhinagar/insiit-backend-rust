@@ -11,11 +11,9 @@ pub async fn save_image(base64_data: &String, image_directory_path: &String) -> 
     } else {
         base64_data
     };
-    let image_bytes = BASE64.decode(clean_base64);
-    let image_bytes = if image_bytes.is_ok() {
-        image_bytes.unwrap()
-    } else {
-        return Err(());
+    let image_bytes = match BASE64.decode(clean_base64) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(()),
     };
     let filename = OffsetDateTime::now_utc().unix_timestamp().to_string();
     let mut file = if let Ok(file) = File::create(format!("{image_directory_path}/{filename}")) {

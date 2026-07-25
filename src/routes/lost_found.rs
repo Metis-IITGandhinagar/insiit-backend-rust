@@ -79,9 +79,13 @@ async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header):
     let timestamp = OffsetDateTime::now_utc();
     let mut img_urls = vec![];
     for img in &lost_found_request.base64_images {
-        // WARNING: Fix this
-        let url = crate::utils::save_image(img, &state.image_directory).await.unwrap();
-        img_urls.push(url);
+        match crate::utils::save_image(img, &state.image_directory).await {
+            Ok(url) => img_urls.push(url),
+            Err(_) => {
+                log::error!("LostFound: Failed to save lost_found image");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save lost found image")));
+            }
+        }
     }
 
     match query_as::<_, LostFoundEntry>(

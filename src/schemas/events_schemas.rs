@@ -8,6 +8,16 @@ pub struct EventEntry {
     pub id: i32,
     pub name: String,
     pub description: Option<String>,
+    pub poster_url: Option<String>,
+    pub added_by_email: String,
+    pub address: Option<String>,
+    pub start_datetime: OffsetDateTime
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct EventRequest {
+    pub name: String,
+    pub description: Option<String>,
     pub poster_base64: Option<String>,
     pub added_by_email: String,
     pub address: Option<String>,
@@ -20,7 +30,7 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             description TEXT,
-            poster_base64 TEXT,
+            poster_url TEXT,
             added_by_email VARCHAR(255) NOT NULL,
             address TEXT,
             start_datetime TIMESTAMPTZ NOT NULL

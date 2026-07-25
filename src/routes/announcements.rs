@@ -112,10 +112,9 @@ async fn edit_announcement(State(state): State<AppState>, TypedHeader(auth_heade
     let img_url = if let Some(img_base64) = &announcement_request.img_base64 {
         match save_image(img_base64, &state.image_directory).await {
             Ok(url) => Some(url),
-            Err(e) => {
-                // TODO log error properly
-                log::error!("Failed to upload image:");
-                None
+            Err(_) => {
+                log::error!("Announcement: Failed to save announcement image");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save announcement image")));
             }
         }
     } else { None };
@@ -155,11 +154,15 @@ async fn add_announcement(State(state): State<AppState>, request: Request) -> Re
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
     };
     let timestamp = OffsetDateTime::now_utc();
-    // WARNING/FIX/TODO, implement the save_image function properly and don't use unwrap.
-    let mut img_url = None;
-    if let Some(img_base64) = &announcement_request.img_base64 {
-        img_url = Some(crate::utils::save_image(img_base64, &state.image_directory).await.unwrap());
-    }
+    let img_url = if let Some(img_base64) = &announcement_request.img_base64 {
+        match save_image(img_base64, &state.image_directory).await {
+            Ok(url) => Some(url),
+            Err(_) => {
+                log::error!("Announcement: Failed to save announcement image");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save announcement image")));
+            }
+        }
+    } else { None };
 
     match query_as::<_, AnnouncementEntry>(
         "INSERT INTO announcements(title, description, added_on_timestamp, added_by_email, img_url)
