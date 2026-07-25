@@ -29,10 +29,10 @@ pub struct LostFoundRequest {
 pub struct LostFoundClaim {
     pub id: i32,
     pub item_name: String,
-    #[serde(skip_deserializing)]
+    #[serde(default)]
     pub claimed_by_email: String,
     pub remarks: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
     pub claim_timestamp: OffsetDateTime
 }
 

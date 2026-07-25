@@ -56,7 +56,7 @@ async fn get_admin_permissions(State(state): State<AppState>, TypedHeader(auth_h
     // fetched from the db and it may return Err, and return internal server error to client
     // rather than forbidden
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, put_event, post_mess_menu, post_outlets, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
     )
         .bind(email)
         .fetch_one(&state.pool).await {

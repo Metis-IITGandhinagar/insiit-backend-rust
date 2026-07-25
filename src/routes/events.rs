@@ -23,7 +23,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_events(State(state): State<AppState>) -> Result<JsonResponse<Vec<EventEntry>>, (StatusCode, String)> {
     match query_as::<_, EventEntry>(
-        "SELECT id, name, poster_url, added_by_email, address, start_datetime FROM events WHERE start_datetime > $1"
+        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime FROM events WHERE start_datetime > $1"
     )
         .bind(OffsetDateTime::now_utc())
         .fetch_all(&state.pool).await {

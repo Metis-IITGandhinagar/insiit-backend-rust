@@ -15,7 +15,7 @@ pub fn get_routes() -> Router<AppState> {
         .route("/announcements", get(get_all_announcements))
         .route("/announcements/{id}", get(get_announcement_by_id))
         .route("/announcements/{id}", delete(delete_announcement))
-        .route("/announcements", put(edit_announcement))
+        .route("/announcements/{id}", put(edit_announcement))
         .route("/announcements", post(verify_and_execute(AdminPermission::PostAnnouncement, add_announcement)))
 }
 

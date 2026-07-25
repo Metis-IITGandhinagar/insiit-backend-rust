@@ -26,7 +26,7 @@ pub struct BuySellRequest {
 
 
 #[derive(Type, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
-#[sqlx(type_name = "item_status", rename_all = "snake_case")]
+#[sqlx(type_name = "buy_sell_item_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum BuySellStatus {
     #[default] Selling, Sold
@@ -37,11 +37,11 @@ pub enum BuySellStatus {
 pub struct BidEntry {
     pub item_id: i32,
     pub item_name: String,
-    #[serde(skip_deserializing)]
+    #[serde(default)]
     pub bid_by_email: String,
     pub bid_amount_in_rs: f64,
     pub remarks: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
     pub bid_timestamp: OffsetDateTime
 }
 

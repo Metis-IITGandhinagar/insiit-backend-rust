@@ -13,7 +13,7 @@ pub fn get_routes() -> Router<AppState> {
         .route("/lost-found", get(get_all_lost_found))
         .route("/lost-found/{id}", get(get_lost_found_by_id))
         .route("/lost-found/{id}", delete(delete_lost_found))
-        .route("/lost-found", put(edit_lost_found))
+        .route("/lost-found/{id}", put(edit_lost_found))
         .route("/lost-found", post(add_lost_found))
         .route("/lost-found/claim-found", post(claim_found))
         .route("/lost-found/mark-found", put(mark_found))
@@ -21,7 +21,7 @@ pub fn get_routes() -> Router<AppState> {
 
 async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonResponse<Vec<LostFoundEntry>>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE item_status = 'lost'"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE status = 'lost'"
     )
         .fetch_all(&state.pool)
         .await {
@@ -38,7 +38,7 @@ async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonRespons
 
 async fn get_lost_found_by_id(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, item_status, img_urls FROM lostfoundentries WHERE id = $1"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE id = $1"
     )
         .bind(id)
         .fetch_one(&state.pool).await {
@@ -111,7 +111,7 @@ async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header):
         }
 }
 
-async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(lost_found_entry): Json<LostFoundEntry>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)>{
+async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>, Json(lost_found_request): Json<LostFoundRequest>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)>{
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
@@ -132,15 +132,14 @@ async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header)
     };
     match query_as::<_, LostFoundEntry>(
         "UPDATE lostfoundentries
-        SET item_name = $1, description = $2, img_urls = $3
-        WHERE id = $4 AND added_by_email = $5
+        SET item_name = $1, description = $2
+        WHERE id = $3 AND added_by_email = $4
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls
         "
     )
-        .bind(&lost_found_entry.item_name)
-        .bind(&lost_found_entry.description)
-        .bind(&lost_found_entry.img_urls)
-        .bind(&lost_found_entry.id)
+        .bind(&lost_found_request.item_name)
+        .bind(&lost_found_request.description)
+        .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_lost_found_entry) => {
