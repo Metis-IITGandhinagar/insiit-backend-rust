@@ -19,8 +19,6 @@ pub struct AnnouncementRequest {
     pub title: String,
     pub description: String,
     pub img_base64: Option<String>,
-    // BUG/WARNING/TODO get email not from request header but from auth header token
-    pub added_by_email: String
 }
 
 

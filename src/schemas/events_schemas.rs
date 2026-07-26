@@ -19,7 +19,6 @@ pub struct EventRequest {
     pub name: String,
     pub description: Option<String>,
     pub poster_base64: Option<String>,
-    pub added_by_email: String,
     pub address: Option<String>,
     pub start_datetime: OffsetDateTime
 }

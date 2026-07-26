@@ -22,7 +22,7 @@ async fn get_mess_menu(State(state): State<AppState>) -> Result<JsonResponse<Mes
         }
 }
 
-async fn add_mess_menu(State(state): State<AppState>, request: Request) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
+async fn add_mess_menu(State(state): State<AppState>, request: Request, _email: String) -> Result<JsonResponse<MessMenu>, (StatusCode, String)> {
     let Json(mess_menu) = match Json::<MessMenu>::from_request(request, &state).await {
         Ok(mess_menu) => mess_menu,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),

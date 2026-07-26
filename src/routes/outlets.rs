@@ -36,7 +36,7 @@ async fn get_outlet(State(state): State<AppState>, Path(id): Path<i32>) -> Resul
         }
 }
 
-async fn add_outlet(State(state): State<AppState>, request: Request) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
+async fn add_outlet(State(state): State<AppState>, request: Request, _email: String) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
     let Json(outlet_request) = match Json::<OutletRequest>::from_request(request, &state).await {
         Ok(outlet_request) => outlet_request,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),

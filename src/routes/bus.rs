@@ -24,7 +24,7 @@ async fn get_bus(State(state): State<AppState>) -> Result<JsonResponse<Vec<BusEn
         }
 }
 
-async fn add_bus(State(state): State<AppState>, request: Request) -> Result<JsonResponse<BusEntry>, (StatusCode, String)> {
+async fn add_bus(State(state): State<AppState>, request: Request, _email: String) -> Result<JsonResponse<BusEntry>, (StatusCode, String)> {
     let Json(bus_entry) = match Json::<BusEntry>::from_request(request, &state).await {
         Ok(bus_entry) => bus_entry,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),

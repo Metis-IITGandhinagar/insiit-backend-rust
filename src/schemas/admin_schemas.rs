@@ -34,7 +34,7 @@ pub enum AdminPermission {
 }
 
 impl AdminPermission {
-    pub async fn granted_to(&self, token: String, state: AppState) -> Result<bool, String> {
+    pub async fn granted_to(&self, token: String, state: AppState) -> Result<Option<String>, String> {
         let validator = state.firebase_token_validator;
         let pool = &state.pool;
         let user = match validator.clone().validate(token).await {
@@ -46,7 +46,7 @@ impl AdminPermission {
         };
         let email = match user.get("email") {
             Some(value) => match value.as_str() {
-                Some(email) => email,
+                Some(email) => email.to_string(),
                 None => return Err(String::from("Invalid user")),
             },
             None => return Err(String::from("Invalid user")),
@@ -56,14 +56,14 @@ impl AdminPermission {
         // rather than forbidden
         let sql = format!("SELECT {} FROM admins WHERE email = $1", self);
         match query_as::<_, (bool,)>(sqlx::AssertSqlSafe(sql))
-            .bind(email)
+            .bind(&email)
             .fetch_one(pool).await {
-                Ok(p) => return Ok(p.0),
+                Ok(p) => if p.0 { Ok(Some(email)) } else { Ok(None) },
                 Err(e) => {
                     log::error!("Failed to execute query {e}");
-                    return Err(String::from("Couldn't check permission in database"));
+                    Err(String::from("Couldn't check permission in database"))
                 }
-            };
+            }
     }
 }
 

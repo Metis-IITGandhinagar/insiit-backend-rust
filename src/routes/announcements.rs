@@ -148,7 +148,7 @@ async fn edit_announcement(State(state): State<AppState>, TypedHeader(auth_heade
 
 
 
-async fn add_announcement(State(state): State<AppState>, request: Request) -> Result<JsonResponse<AnnouncementEntry>, (StatusCode, String)> {
+async fn add_announcement(State(state): State<AppState>, request: Request, email: String) -> Result<JsonResponse<AnnouncementEntry>, (StatusCode, String)> {
     let Json(announcement_request) = match Json::<AnnouncementRequest>::from_request(request, &state).await {
         Ok(announcement_request) => announcement_request,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
@@ -173,8 +173,7 @@ async fn add_announcement(State(state): State<AppState>, request: Request) -> Re
         .bind(&announcement_request.title)
         .bind(&announcement_request.description)
         .bind(timestamp)
-        // BUG/WARNING/TODO get email not from request header but from auth header token
-        .bind(&announcement_request.added_by_email)
+        .bind(&email)
         .bind(img_url)
         .fetch_one(&state.pool).await {
             Ok(announcement) => {

@@ -15,7 +15,7 @@ pub fn get_routes() -> Router<AppState> {
         .route("/admin", post(verify_and_execute(AdminPermission::PostAdmin, add_admin)))
 }
 
-async fn get_admins(State(state): State<AppState>, _request: Request) -> Result<JsonResponse<Vec<AdminEntry>>, (StatusCode, String)> {
+async fn get_admins(State(state): State<AppState>, _request: Request, _email: String) -> Result<JsonResponse<Vec<AdminEntry>>, (StatusCode, String)> {
     match query_as::<_, AdminEntry>(
         "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, put_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins;"
     )
@@ -68,7 +68,7 @@ async fn get_admin_permissions(State(state): State<AppState>, TypedHeader(auth_h
         }
 }
 
-pub async fn add_admin(State(state): State<AppState>, request: Request) -> Result<JsonResponse<AdminEntry>, (StatusCode, String)> {
+pub async fn add_admin(State(state): State<AppState>, request: Request, _email: String) -> Result<JsonResponse<AdminEntry>, (StatusCode, String)> {
     let Json(admin) = match Json::<AdminEntry>::from_request(request, &state).await {
         Ok(admin) => admin,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),

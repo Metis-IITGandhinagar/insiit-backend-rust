@@ -43,7 +43,7 @@ async fn get_event(State(state): State<AppState>, Path(id): Path<i32>) -> Result
         }
 }
 
-async fn add_event(State(state): State<AppState>, request: Request) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
+async fn add_event(State(state): State<AppState>, request: Request, email: String) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
     let Json(event_request) = match Json::<EventRequest>::from_request(request, &state).await {
         Ok(event_request) => event_request,
         Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
@@ -66,7 +66,7 @@ async fn add_event(State(state): State<AppState>, request: Request) -> Result<Js
         .bind(&event_request.name)
         .bind(&event_request.description)
         .bind(&poster_url)
-        .bind(&event_request.added_by_email)
+        .bind(&email)
         .bind(&event_request.address)
         .bind(&event_request.start_datetime)
         .fetch_one(&state.pool).await {
