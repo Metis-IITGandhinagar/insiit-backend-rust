@@ -11,6 +11,7 @@ pub struct EventEntry {
     pub poster_url: Option<String>,
     pub added_by_email: String,
     pub address: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub start_datetime: OffsetDateTime
 }
 
@@ -20,6 +21,7 @@ pub struct EventRequest {
     pub description: Option<String>,
     pub poster_base64: Option<String>,
     pub address: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub start_datetime: OffsetDateTime
 }
 
