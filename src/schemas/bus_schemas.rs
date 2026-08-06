@@ -16,7 +16,7 @@ pub struct BusEntry {
 }
 #[derive(Serialize, Deserialize, FromRow)]
 pub struct BusStop {
-    #[serde(with = "time::serde::timestamp")]
+    #[serde(with = "time::serde::rfc3339")]
     pub time: OffsetDateTime,
     pub location: String
 }

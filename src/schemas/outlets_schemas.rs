@@ -12,9 +12,9 @@ pub struct Outlet {
     #[sqlx(flatten)]
     pub location: Point,
     pub landmark: Option<String>,
-    #[serde(with = "time::serde::timestamp")]
+    #[serde(with = "time::serde::rfc3339")]
     pub open_time: OffsetDateTime,
-    #[serde(with = "time::serde::timestamp")]
+    #[serde(with = "time::serde::rfc3339")]
     pub close_time: OffsetDateTime,
     #[sqlx(json)]
     pub menu: Vec<OutletMenuEntry>,
@@ -27,9 +27,9 @@ pub struct OutletRequest {
     pub description: Option<String>,
     pub location: Point,
     pub landmark: Option<String>,
-    #[serde(with = "time::serde::timestamp")]
+    #[serde(with = "time::serde::rfc3339")]
     pub open_time: OffsetDateTime,
-    #[serde(with = "time::serde::timestamp")]
+    #[serde(with = "time::serde::rfc3339")]
     pub close_time: OffsetDateTime,
     pub menu: Vec<OutletMenuEntry>,
     pub base64_image: Option<String>

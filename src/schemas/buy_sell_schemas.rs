@@ -7,7 +7,7 @@ pub struct BuySellEntry {
     pub id: i32,
     pub item_name: String,
     pub description: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
     pub added_on_timestamp: OffsetDateTime,
     pub added_by_email: String,
     #[serde(skip_deserializing)]
@@ -41,7 +41,7 @@ pub struct BidEntry {
     pub bid_by_email: String,
     pub bid_amount_in_rs: f64,
     pub remarks: String,
-    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
     pub bid_timestamp: OffsetDateTime
 }
 

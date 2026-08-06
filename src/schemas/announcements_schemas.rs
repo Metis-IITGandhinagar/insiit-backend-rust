@@ -7,7 +7,7 @@ pub struct AnnouncementEntry {
     pub id: i32,
     pub title: String,
     pub description: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
     pub added_on_timestamp: OffsetDateTime,
     pub added_by_email: String,
     pub img_url: Option<String>

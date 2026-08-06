@@ -7,7 +7,7 @@ pub struct LostFoundEntry {
     pub id: i32,
     pub item_name: String,
     pub description: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
     pub added_on_timestamp: OffsetDateTime,
     pub added_by_email: String,
     #[serde(skip_deserializing)]
@@ -32,7 +32,7 @@ pub struct LostFoundClaim {
     #[serde(default)]
     pub claimed_by_email: String,
     pub remarks: String,
-    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::timestamp")]
+    #[serde(default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
     pub claim_timestamp: OffsetDateTime
 }
 
