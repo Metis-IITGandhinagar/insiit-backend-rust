@@ -130,15 +130,27 @@ async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header)
         },
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
+    let mut img_urls = vec![];
+    for img in &lost_found_request.base64_images {
+        match crate::utils::save_image(img, &state.image_directory).await {
+            Ok(url) => img_urls.push(url),
+            Err(_) => {
+                log::error!("LostFound: Failed to save lost_found image");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save lost found image")));
+            }
+        }
+    }
+
     match query_as::<_, LostFoundEntry>(
         "UPDATE lostfoundentries
-        SET item_name = $1, description = $2
-        WHERE id = $3 AND added_by_email = $4
+        SET item_name = $1, description = $2, img_urls = $3
+        WHERE id = $4 AND added_by_email = $5
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls
         "
     )
         .bind(&lost_found_request.item_name)
         .bind(&lost_found_request.description)
+        .bind(img_urls)
         .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {

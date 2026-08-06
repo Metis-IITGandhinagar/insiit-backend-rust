@@ -130,15 +130,27 @@ async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): 
         },
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
+    let mut img_urls = vec![];
+    for img in &buy_sell_entry.base64_images {
+        match crate::utils::save_image(img, &state.image_directory).await {
+            Ok(url) => img_urls.push(url),
+            Err(_) => {
+                log::error!("BuySell: Failed to save buy_sell image");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save buy sell image")));
+            }
+        }
+    }
+
     match query_as::<_, BuySellEntry>(
         "UPDATE buysellentries
-        SET item_name = $1, description = $2
-        WHERE id = $3 AND added_by_email = $4
+        SET item_name = $1, description = $2, img_urls = $3
+        WHERE id = $4 AND added_by_email = $5
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls
         "
     )
         .bind(&buy_sell_entry.item_name)
         .bind(&buy_sell_entry.description)
+        .bind(img_urls)
         .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {
