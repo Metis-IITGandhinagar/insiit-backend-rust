@@ -1,0 +1,11 @@
+name: ci
+on: [push]
+jobs:
+  Compile-Format-Test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v6
+      - run: cargo check
+      - run: cargo fmt
+      - run: cargo test --verbose
