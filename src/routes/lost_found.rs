@@ -1,12 +1,20 @@
-use axum::{ extract::{ FromRequest, Json, Path, Request, State }, routing:: { Router, delete, get, post, put }, http::StatusCode, response::Json as JsonResponse };
-use axum_extra::{ typed_header::TypedHeader, headers::Authorization, headers::authorization::Bearer };
+use axum::{
+    extract::{FromRequest, Json, Path, Request, State},
+    http::StatusCode,
+    response::Json as JsonResponse,
+    routing::{Router, delete, get, post, put},
+};
+use axum_extra::{
+    headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
+};
 use rs_firebase_admin_sdk::jwt::TokenValidator;
-use sqlx::{ query, query_as };
+use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
 use crate::AppState;
-use crate::schemas::lost_found_schemas::{ LostFoundEntry, LostFoundRequest, LostFoundStatus, LostFoundClaim };
-
+use crate::schemas::lost_found_schemas::{
+    LostFoundClaim, LostFoundEntry, LostFoundRequest, LostFoundStatus,
+};
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
@@ -19,7 +27,9 @@ pub fn get_routes() -> Router<AppState> {
         .route("/lost-found/mark-found", put(mark_found))
 }
 
-async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonResponse<Vec<LostFoundEntry>>, (StatusCode, String)> {
+async fn get_all_lost_found(
+    State(state): State<AppState>,
+) -> Result<JsonResponse<Vec<LostFoundEntry>>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
         "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE status = 'lost'"
     )
@@ -36,7 +46,10 @@ async fn get_all_lost_found(State(state): State<AppState>) -> Result<JsonRespons
         }
 }
 
-async fn get_lost_found_by_id(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
+async fn get_lost_found_by_id(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     match query_as::<_, LostFoundEntry>(
         "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls FROM lostfoundentries WHERE id = $1"
     )
@@ -57,16 +70,23 @@ async fn get_lost_found_by_id(State(state): State<AppState>, Path(id): Path<i32>
         }
 }
 
-async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(lost_found_request): Json<LostFoundRequest>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
+async fn add_lost_found(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(lost_found_request): Json<LostFoundRequest>,
+) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("LostFound: Found user for saving lost_found_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -83,7 +103,10 @@ async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header):
             Ok(url) => img_urls.push(url),
             Err(_) => {
                 log::error!("LostFound: Failed to save lost_found image");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save lost found image")));
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("Couldn't save lost found image"),
+                ));
             }
         }
     }
@@ -111,16 +134,24 @@ async fn add_lost_found(State(state): State<AppState>, TypedHeader(auth_header):
         }
 }
 
-async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>, Json(lost_found_request): Json<LostFoundRequest>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)>{
+async fn edit_lost_found(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+    Json(lost_found_request): Json<LostFoundRequest>,
+) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("LostFound: Found user for saving lost_found_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -136,7 +167,10 @@ async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header)
             Ok(url) => img_urls.push(url),
             Err(_) => {
                 log::error!("LostFound: Failed to save lost_found image");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save lost found image")));
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("Couldn't save lost found image"),
+                ));
             }
         }
     }
@@ -169,16 +203,23 @@ async fn edit_lost_found(State(state): State<AppState>, TypedHeader(auth_header)
         }
 }
 
-async fn delete_lost_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>) -> Result<JsonResponse<()>, (StatusCode, String)>{
+async fn delete_lost_found(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("LostFound: Found user for saving lost_found_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -188,36 +229,44 @@ async fn delete_lost_found(State(state): State<AppState>, TypedHeader(auth_heade
         },
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
-    match query(
-        "DELETE FROM lostfoundentries WHERE id = $1 AND added_by_email = $2"
-    )
+    match query("DELETE FROM lostfoundentries WHERE id = $1 AND added_by_email = $2")
         .bind(id)
         .bind(email)
-        .execute(&state.pool).await {
-            Ok(result) if result.rows_affected() > 0 => {
-                log::info!("LostFound: Delete item lost_found_entry");
-                Ok(Json(()))
-            },
-            Ok(_) => {
-                Err((StatusCode::NOT_FOUND, String::from("entry not found")))
-            },
-            Err(e) => {
-                log::error!("LostFound: Error adding lost_found_entry: {e}");
-                Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't delete lost found entry from the database")))
-            }
+        .execute(&state.pool)
+        .await
+    {
+        Ok(result) if result.rows_affected() > 0 => {
+            log::info!("LostFound: Delete item lost_found_entry");
+            Ok(Json(()))
         }
+        Ok(_) => Err((StatusCode::NOT_FOUND, String::from("entry not found"))),
+        Err(e) => {
+            log::error!("LostFound: Error adding lost_found_entry: {e}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Couldn't delete lost found entry from the database"),
+            ))
+        }
+    }
 }
 
-async fn mark_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(mut lost_found_entry): Json<LostFoundEntry>) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
+async fn mark_found(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(mut lost_found_entry): Json<LostFoundEntry>,
+) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("LostFound: Found user for mark_found lost_found_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("LostFound: Couldn't find user for mark_found lost_found_entry");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -248,16 +297,23 @@ async fn mark_found(State(state): State<AppState>, TypedHeader(auth_header): Typ
         }
 }
 
-async fn claim_found(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(mut claim_request): Json<LostFoundClaim>) ->  Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
+async fn claim_found(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(mut claim_request): Json<LostFoundClaim>,
+) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("LostFound: Found user for claim_found lost_found_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {

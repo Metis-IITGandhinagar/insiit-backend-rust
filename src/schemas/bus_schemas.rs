@@ -1,5 +1,5 @@
-use serde::{ Serialize, Deserialize };
-use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query };
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, postgres::PgQueryResult, query};
 
 /// A recurring daily service, so a departure has a clock time and no meaningful date.
 ///
@@ -18,11 +18,12 @@ pub struct BusEntry {
     pub source: String,
     pub destination: String,
     /// Intermediate stops in order, without times.
-    pub stops: Vec<String>
+    pub stops: Vec<String>,
 }
 
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
-    query("
+    query(
+        "
         CREATE TABLE IF NOT EXISTS bus (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -31,7 +32,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             destination VARCHAR(255) NOT NULL,
             stops TEXT[] NOT NULL DEFAULT '{}'
         );
-    ")
-        .execute(pool)
-        .await
+    ",
+    )
+    .execute(pool)
+    .await
 }

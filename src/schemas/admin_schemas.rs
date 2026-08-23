@@ -1,6 +1,6 @@
 use rs_firebase_admin_sdk::jwt::TokenValidator;
-use serde::{ Serialize, Deserialize };
-use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, query_as };
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, postgres::PgQueryResult, query, query_as};
 
 use crate::AppState;
 
@@ -29,18 +29,32 @@ pub struct AdminPermissions {
 #[derive(Clone, Debug, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum AdminPermission {
-    GetAdmin, PostAdmin, PutAdmin, PostBusSchedule, PutBusSchedule, PostEvent, PostMessMenu, PostOutlet, DeleteOutlet, PutOutlet, PostAnnouncement
+    GetAdmin,
+    PostAdmin,
+    PutAdmin,
+    PostBusSchedule,
+    PutBusSchedule,
+    PostEvent,
+    PostMessMenu,
+    PostOutlet,
+    DeleteOutlet,
+    PutOutlet,
+    PostAnnouncement,
 }
 
 impl AdminPermission {
-    pub async fn granted_to(&self, token: String, state: AppState) -> Result<Option<String>, String> {
+    pub async fn granted_to(
+        &self,
+        token: String,
+        state: AppState,
+    ) -> Result<Option<String>, String> {
         let validator = state.firebase_token_validator;
         let pool = &state.pool;
         let user = match validator.clone().validate(token).await {
             Ok(user) => user,
             Err(e) => {
                 log::error!("Failed to authorize user: {e}");
-                return Err(String::from("Could not authorize user"))
+                return Err(String::from("Could not authorize user"));
             }
         };
         let email = match user.get("email") {
@@ -56,16 +70,23 @@ impl AdminPermission {
         let sql = format!("SELECT {} FROM admins WHERE email = $1", self);
         match query_as::<_, (bool,)>(sqlx::AssertSqlSafe(sql))
             .bind(&email)
-            .fetch_one(pool).await {
-                Ok(p) => if p.0 { Ok(Some(email)) } else { Ok(None) },
-                Err(e) => {
-                    log::error!("Failed to execute query {e}");
-                    Err(String::from("Couldn't check permission in database"))
+            .fetch_one(pool)
+            .await
+        {
+            Ok(p) => {
+                if p.0 {
+                    Ok(Some(email))
+                } else {
+                    Ok(None)
                 }
             }
+            Err(e) => {
+                log::error!("Failed to execute query {e}");
+                Err(String::from("Couldn't check permission in database"))
+            }
+        }
     }
 }
-
 
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
     query(
@@ -82,8 +103,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             delete_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             put_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             post_announcement BOOLEAN NOT NULL DEFAULT FALSE
-        );"
+        );",
     )
-        .execute(pool)
-        .await
+    .execute(pool)
+    .await
 }

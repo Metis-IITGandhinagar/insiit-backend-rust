@@ -1,5 +1,5 @@
-use base64::{ engine::general_purpose::STANDARD as BASE64, Engine };
-use std::sync::atomic::{ AtomicU64, Ordering };
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use std::sync::atomic::{AtomicU64, Ordering};
 use time::OffsetDateTime;
 use tokio::io::AsyncWriteExt;
 
@@ -18,12 +18,13 @@ pub async fn save_image(base64_data: &String, image_directory_path: &String) -> 
     let unique = IMAGE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let timestamp = OffsetDateTime::now_utc().unix_timestamp_nanos();
     let filename = format!("{timestamp}-{unique}");
-    let mut file = match tokio::fs::File::create(format!("{image_directory_path}/{filename}")).await {
+    let mut file = match tokio::fs::File::create(format!("{image_directory_path}/{filename}")).await
+    {
         Ok(file) => file,
         Err(_) => return Err(()),
     };
     match file.write_all(&image_bytes).await {
         Ok(_) => Ok(format!("images/{filename}")),
-        Err(_) => Err(())
+        Err(_) => Err(()),
     }
 }

@@ -1,5 +1,5 @@
-use serde::{ Serialize, Deserialize };
-use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query };
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, postgres::PgQueryResult, query};
 use time::OffsetDateTime;
 
 #[derive(Serialize, Deserialize, FromRow)]
@@ -12,7 +12,7 @@ pub struct EventEntry {
     pub added_by_email: String,
     pub address: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    pub start_datetime: OffsetDateTime
+    pub start_datetime: OffsetDateTime,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,11 +22,12 @@ pub struct EventRequest {
     pub poster_base64: Option<String>,
     pub address: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    pub start_datetime: OffsetDateTime
+    pub start_datetime: OffsetDateTime,
 }
 
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
-    query("
+    query(
+        "
         CREATE TABLE IF NOT EXISTS events (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -36,7 +37,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             address TEXT,
             start_datetime TIMESTAMPTZ NOT NULL
         );
-    ")
-        .execute(pool)
-        .await
+    ",
+    )
+    .execute(pool)
+    .await
 }

@@ -1,12 +1,18 @@
-use axum::{ extract::{ FromRequest, Json, Path, Request, State }, routing:: { Router, delete, get, post, put }, http::StatusCode, response::Json as JsonResponse };
-use axum_extra::{ typed_header::TypedHeader, headers::Authorization, headers::authorization::Bearer };
+use axum::{
+    extract::{FromRequest, Json, Path, Request, State},
+    http::StatusCode,
+    response::Json as JsonResponse,
+    routing::{Router, delete, get, post, put},
+};
+use axum_extra::{
+    headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
+};
 use rs_firebase_admin_sdk::jwt::TokenValidator;
-use sqlx::{ query, query_as };
+use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
 use crate::AppState;
-use crate::schemas::buy_sell_schemas::{ BuySellEntry, BuySellRequest, BuySellStatus, BidEntry };
-
+use crate::schemas::buy_sell_schemas::{BidEntry, BuySellEntry, BuySellRequest, BuySellStatus};
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
@@ -19,7 +25,9 @@ pub fn get_routes() -> Router<AppState> {
         .route("/buy-sell/mark-sold", put(mark_sold))
 }
 
-async fn get_all_buy_sell(State(state): State<AppState>) -> Result<JsonResponse<Vec<BuySellEntry>>, (StatusCode, String)> {
+async fn get_all_buy_sell(
+    State(state): State<AppState>,
+) -> Result<JsonResponse<Vec<BuySellEntry>>, (StatusCode, String)> {
     match query_as::<_, BuySellEntry>(
         "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries WHERE status = 'selling'"
     )
@@ -36,7 +44,10 @@ async fn get_all_buy_sell(State(state): State<AppState>) -> Result<JsonResponse<
         }
 }
 
-async fn get_buy_sell_by_id(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
+async fn get_buy_sell_by_id(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     match query_as::<_, BuySellEntry>(
         "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries WHERE id = $1"
     )
@@ -57,16 +68,23 @@ async fn get_buy_sell_by_id(State(state): State<AppState>, Path(id): Path<i32>) 
         }
 }
 
-async fn add_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(buy_sell_request): Json<BuySellRequest>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
+async fn add_buy_sell(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(buy_sell_request): Json<BuySellRequest>,
+) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("BuySell: Found user for saving buy_sell_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -83,7 +101,10 @@ async fn add_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): T
             Ok(url) => img_urls.push(url),
             Err(_) => {
                 log::error!("BuySell: Failed to save buy_sell image");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save buy sell image")));
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("Couldn't save buy sell image"),
+                ));
             }
         }
     }
@@ -111,16 +132,24 @@ async fn add_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): T
         }
 }
 
-async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>, Json(buy_sell_entry): Json<BuySellRequest>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)>{
+async fn edit_buy_sell(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+    Json(buy_sell_entry): Json<BuySellRequest>,
+) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("BuySell: Found user for saving buy_sell_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -136,7 +165,10 @@ async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): 
             Ok(url) => img_urls.push(url),
             Err(_) => {
                 log::error!("BuySell: Failed to save buy_sell image");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save buy sell image")));
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("Couldn't save buy sell image"),
+                ));
             }
         }
     }
@@ -169,16 +201,23 @@ async fn edit_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): 
         }
 }
 
-async fn delete_buy_sell(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Path(id): Path<i32>) -> Result<JsonResponse<()>, (StatusCode, String)>{
+async fn delete_buy_sell(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("BuySell: Found user for saving buy_sell_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -188,36 +227,44 @@ async fn delete_buy_sell(State(state): State<AppState>, TypedHeader(auth_header)
         },
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
-    match query(
-        "DELETE FROM buysellentries WHERE id = $1 AND added_by_email = $2"
-    )
+    match query("DELETE FROM buysellentries WHERE id = $1 AND added_by_email = $2")
         .bind(id)
         .bind(email)
-        .execute(&state.pool).await {
-            Ok(result) if result.rows_affected() > 0 => {
-                log::info!("BuySell: Delete item buy_sell_entry");
-                Ok(Json(()))
-            },
-            Ok(_) => {
-                Err((StatusCode::NOT_FOUND, String::from("entry not found")))
-            },
-            Err(e) => {
-                log::error!("BuySell: Error adding buy_sell_entry: {e}");
-                Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't delete buy sell entry from the database")))
-            }
+        .execute(&state.pool)
+        .await
+    {
+        Ok(result) if result.rows_affected() > 0 => {
+            log::info!("BuySell: Delete item buy_sell_entry");
+            Ok(Json(()))
         }
+        Ok(_) => Err((StatusCode::NOT_FOUND, String::from("entry not found"))),
+        Err(e) => {
+            log::error!("BuySell: Error adding buy_sell_entry: {e}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Couldn't delete buy sell entry from the database"),
+            ))
+        }
+    }
 }
 
-async fn mark_sold(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(mut buy_sell_entry): Json<BuySellEntry>) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
+async fn mark_sold(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(mut buy_sell_entry): Json<BuySellEntry>,
+) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("BuySell: Found user for mark_sold buy_sell_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("BuySell: Couldn't find user for mark_sold buy_sell_entry");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {
@@ -248,16 +295,23 @@ async fn mark_sold(State(state): State<AppState>, TypedHeader(auth_header): Type
         }
 }
 
-async fn add_bid(State(state): State<AppState>, TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>, Json(mut bid_request): Json<BidEntry>) ->  Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
+async fn add_bid(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(mut bid_request): Json<BidEntry>,
+) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
     let user = match state.firebase_token_validator.clone().validate(token).await {
         Ok(user) => {
             log::info!("BuySell: Found user for add_bid buy_sell_entry");
             user
-        },
+        }
         Err(e) => {
             log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Couldn't authenticate user")))
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
         }
     };
     let email = match user.get("email") {

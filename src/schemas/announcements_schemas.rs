@@ -1,5 +1,5 @@
-use serde::{ Serialize, Deserialize };
-use sqlx::{ FromRow, PgPool, postgres::PgQueryResult, query, Type };
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, Type, postgres::PgQueryResult, query};
 use time::OffsetDateTime;
 
 #[derive(Serialize, Deserialize, FromRow)]
@@ -7,12 +7,15 @@ pub struct AnnouncementEntry {
     pub id: i32,
     pub title: String,
     pub description: String,
-    #[serde(skip_deserializing, default = "OffsetDateTime::now_utc", with = "time::serde::rfc3339")]
+    #[serde(
+        skip_deserializing,
+        default = "OffsetDateTime::now_utc",
+        with = "time::serde::rfc3339"
+    )]
     pub added_on_timestamp: OffsetDateTime,
     pub added_by_email: String,
-    pub img_url: Option<String>
+    pub img_url: Option<String>,
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub struct AnnouncementRequest {
@@ -21,9 +24,9 @@ pub struct AnnouncementRequest {
     pub img_base64: Option<String>,
 }
 
-
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
-    query("
+    query(
+        "
         CREATE TABLE IF NOT EXISTS announcements (
             id SERIAL PRIMARY KEY,
             title VARCHAR(255) NOT NULL,
@@ -32,7 +35,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             added_by_email VARCHAR(255) NOT NULL,
             img_url VARCHAR(255)
         );
-    ")
-        .execute(pool)
-        .await
+    ",
+    )
+    .execute(pool)
+    .await
 }

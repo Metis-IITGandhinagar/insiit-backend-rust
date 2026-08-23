@@ -1,20 +1,30 @@
-use axum::{ extract::{ FromRequest, Json, Path, Request, State }, routing:: { Router, get, post }, http::StatusCode, response::Json as JsonResponse };
+use axum::{
+    extract::{FromRequest, Json, Path, Request, State},
+    http::StatusCode,
+    response::Json as JsonResponse,
+    routing::{Router, get, post},
+};
 use sqlx::query_as;
 
 use crate::AppState;
 use crate::auth::verify_and_execute;
 use crate::schemas::admin_schemas::AdminPermission;
-use crate::schemas::outlets_schemas::{ Outlet, OutletRequest };
+use crate::schemas::outlets_schemas::{Outlet, OutletRequest};
 use crate::utils::save_image;
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/outlets/{id}", get(get_outlet))
         .route("/outlets", get(get_outlets))
-        .route("/outlets", post(verify_and_execute(AdminPermission::PostOutlet, add_outlet)))
+        .route(
+            "/outlets",
+            post(verify_and_execute(AdminPermission::PostOutlet, add_outlet)),
+        )
 }
 
-async fn get_outlets(State(state): State<AppState>) -> Result<JsonResponse<Vec<Outlet>>, (StatusCode, String)> {
+async fn get_outlets(
+    State(state): State<AppState>,
+) -> Result<JsonResponse<Vec<Outlet>>, (StatusCode, String)> {
     match query_as::<_, Outlet>(
         "SELECT id, name, description, latitude, longitude, landmark, open_time, close_time, menu, image_url FROM outlets;"
     )
@@ -24,7 +34,10 @@ async fn get_outlets(State(state): State<AppState>) -> Result<JsonResponse<Vec<O
     }
 }
 
-async fn get_outlet(State(state): State<AppState>, Path(id): Path<i32>) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
+async fn get_outlet(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
     match query_as::<_, Outlet>(
         "SELECT id, name, description, latitude, longitude, landmark, open_time, close_time, menu, image_url FROM outlets WHERE id = $1"
     )
@@ -36,20 +49,34 @@ async fn get_outlet(State(state): State<AppState>, Path(id): Path<i32>) -> Resul
         }
 }
 
-async fn add_outlet(State(state): State<AppState>, request: Request, _email: String) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
+async fn add_outlet(
+    State(state): State<AppState>,
+    request: Request,
+    _email: String,
+) -> Result<JsonResponse<Outlet>, (StatusCode, String)> {
     let Json(outlet_request) = match Json::<OutletRequest>::from_request(request, &state).await {
         Ok(outlet_request) => outlet_request,
-        Err(_e) => return Err((StatusCode::BAD_REQUEST, String::from("Invalid JSON payload"))),
+        Err(_e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                String::from("Invalid JSON payload"),
+            ));
+        }
     };
     let image_url = if let Some(base64_image) = &outlet_request.base64_image {
         match save_image(base64_image, &state.image_directory).await {
             Ok(url) => Some(url),
             Err(_) => {
                 log::error!("Outlets: Failed to save outlet image");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't save outlet image")));
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("Couldn't save outlet image"),
+                ));
             }
         }
-    } else { None };
+    } else {
+        None
+    };
     match query_as::<_, Outlet>(
         "INSERT INTO outlets (name, description, latitude, longitude, landmark, open_time, close_time, menu, image_url)
         VALUES($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)

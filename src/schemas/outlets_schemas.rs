@@ -1,7 +1,6 @@
-use serde::{ Serialize, Deserialize };
-use sqlx::{ FromRow, PgPool, postgres::{ PgQueryResult }, query };
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, postgres::PgQueryResult, query};
 use time::OffsetDateTime;
-
 
 #[derive(Serialize, Deserialize, FromRow)]
 pub struct Outlet {
@@ -18,7 +17,7 @@ pub struct Outlet {
     pub close_time: OffsetDateTime,
     #[sqlx(json)]
     pub menu: Vec<OutletMenuEntry>,
-    pub image_url: Option<String>
+    pub image_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,23 +31,24 @@ pub struct OutletRequest {
     #[serde(with = "time::serde::rfc3339")]
     pub close_time: OffsetDateTime,
     pub menu: Vec<OutletMenuEntry>,
-    pub base64_image: Option<String>
+    pub base64_image: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, FromRow)]
 pub struct OutletMenuEntry {
     pub name: String,
-    pub price: f64
+    pub price: f64,
 }
 
 #[derive(Serialize, Deserialize, FromRow)]
 pub struct Point {
     pub latitude: f64,
-    pub longitude:f64
+    pub longitude: f64,
 }
 
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
-    query("
+    query(
+        "
         CREATE TABLE IF NOT EXISTS outlets (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -61,7 +61,8 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             menu JSONB NOT NULL DEFAULT '[]',
             image_url TEXT
         );
-    ")
-        .execute(pool)
-        .await
+    ",
+    )
+    .execute(pool)
+    .await
 }
