@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3700:3700"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - target_data:/app/target
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+volumes:
+  db_data:
+  target_data:
+
