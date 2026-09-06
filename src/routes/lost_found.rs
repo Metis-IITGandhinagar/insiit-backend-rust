@@ -241,7 +241,7 @@ async fn delete_lost_found(
         }
         Ok(_) => Err((StatusCode::NOT_FOUND, String::from("entry not found"))),
         Err(e) => {
-            log::error!("LostFound: Error adding lost_found_entry: {e}");
+            log::error!("LostFound: Error deleting lost_found_entry: {e}");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 String::from("Couldn't delete lost found entry from the database"),

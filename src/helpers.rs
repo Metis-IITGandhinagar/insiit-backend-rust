@@ -8,6 +8,7 @@ use crate::schemas::events_schemas;
 use crate::schemas::lost_found_schemas;
 use crate::schemas::mess_schemas;
 use crate::schemas::outlets_schemas;
+use crate::schemas::representatives_schemas;
 
 pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     admin_schemas::initialize_table(pool)
@@ -34,6 +35,9 @@ pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     outlets_schemas::initialize_table(pool)
         .await
         .expect("Couldn't initialize outlets table");
+    representatives_schemas::initialize_table(pool)
+        .await
+        .expect("Couldn't initialize representatives table");
     log::info!("Created all required tables");
     Ok(())
 }

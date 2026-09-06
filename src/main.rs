@@ -75,6 +75,7 @@ async fn main() {
     let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
     let outlets_routes = routes::outlets::get_routes();
+    let representatives_routes = routes::representatives::get_routes();
     let router = Router::new()
         .route("/", get(async || "Go to /api-docs for API Documentation"))
         .nest_service("/images", ServeDir::new(&env_vars.image_directory))
@@ -86,6 +87,7 @@ async fn main() {
         .merge(lost_found_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
+        .merge(representatives_routes)
         .layer(cors)
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env_vars.port))

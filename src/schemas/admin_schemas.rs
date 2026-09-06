@@ -24,6 +24,9 @@ pub struct AdminPermissions {
     pub delete_outlet: bool,
     pub put_outlet: bool,
     pub post_announcement: bool,
+    pub post_representative: bool,
+    pub delete_representative: bool,
+    pub put_representative: bool,
 }
 
 #[derive(Clone, Debug, strum::Display)]
@@ -40,6 +43,9 @@ pub enum AdminPermission {
     DeleteOutlet,
     PutOutlet,
     PostAnnouncement,
+    PostRepresentative,
+    DeleteRepresentative,
+    PutRepresentative,
 }
 
 impl AdminPermission {
@@ -102,7 +108,10 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             post_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             delete_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             put_outlet BOOLEAN NOT NULL DEFAULT FALSE,
-            post_announcement BOOLEAN NOT NULL DEFAULT FALSE
+            post_announcement BOOLEAN NOT NULL DEFAULT FALSE,
+            post_representative BOOLEAN NOT NULL DEFAULT FALSE,
+            delete_representative BOOLEAN NOT NULL DEFAULT FALSE,
+            put_representative BOOLEAN NOT NULL DEFAULT FALSE
         );",
     )
     .execute(pool)
