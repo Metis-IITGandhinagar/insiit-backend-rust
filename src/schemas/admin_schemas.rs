@@ -19,6 +19,7 @@ pub struct AdminPermissions {
     pub post_bus_schedule: bool,
     pub put_bus_schedule: bool,
     pub post_event: bool,
+    pub manage_events: bool,
     pub post_mess_menu: bool,
     pub post_outlet: bool,
     pub delete_outlet: bool,
@@ -38,6 +39,7 @@ pub enum AdminPermission {
     PostBusSchedule,
     PutBusSchedule,
     PostEvent,
+    ManageEvents,
     PostMessMenu,
     PostOutlet,
     DeleteOutlet,
@@ -104,6 +106,7 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             post_bus_schedule BOOLEAN NOT NULL DEFAULT FALSE,
             put_bus_schedule BOOLEAN NOT NULL DEFAULT FALSE,
             post_event BOOLEAN NOT NULL DEFAULT FALSE,
+            manage_events BOOLEAN NOT NULL DEFAULT FALSE,
             post_mess_menu BOOLEAN NOT NULL DEFAULT FALSE,
             post_outlet BOOLEAN NOT NULL DEFAULT FALSE,
             delete_outlet BOOLEAN NOT NULL DEFAULT FALSE,
@@ -113,6 +116,26 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             delete_representative BOOLEAN NOT NULL DEFAULT FALSE,
             put_representative BOOLEAN NOT NULL DEFAULT FALSE
         );",
+    )
+    .execute(pool)
+    .await?;
+    query(
+        "ALTER TABLE admins ADD COLUMN IF NOT EXISTS manage_events BOOLEAN NOT NULL DEFAULT FALSE;",
+    )
+    .execute(pool)
+    .await?;
+    query(
+        "ALTER TABLE admins ADD COLUMN IF NOT EXISTS post_representative BOOLEAN NOT NULL DEFAULT FALSE;",
+    )
+    .execute(pool)
+    .await?;
+    query(
+        "ALTER TABLE admins ADD COLUMN IF NOT EXISTS delete_representative BOOLEAN NOT NULL DEFAULT FALSE;",
+    )
+    .execute(pool)
+    .await?;
+    query(
+        "ALTER TABLE admins ADD COLUMN IF NOT EXISTS put_representative BOOLEAN NOT NULL DEFAULT FALSE;",
     )
     .execute(pool)
     .await

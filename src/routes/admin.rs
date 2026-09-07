@@ -34,7 +34,7 @@ async fn get_admins(
     _email: String,
 ) -> Result<JsonResponse<Vec<AdminEntry>>, (StatusCode, String)> {
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins;"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, manage_events, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement, post_representative, delete_representative, put_representative FROM admins;"
     )
         .fetch_all(&state.pool).await {
             Ok(admins) => Ok(Json(admins)),
@@ -80,7 +80,7 @@ async fn get_admin_permissions(
     // fetched from the db and it may return Err, and return internal server error to client
     // rather than forbidden
     match query_as::<_, AdminEntry>(
-        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement FROM admins WHERE email = $1"
+        "SELECT email, get_admin, post_admin, put_admin, post_bus_schedule, put_bus_schedule, post_event, manage_events, post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement, post_representative, delete_representative, put_representative FROM admins WHERE email = $1"
     )
         .bind(email)
         .fetch_one(&state.pool).await {
@@ -109,10 +109,11 @@ pub async fn add_admin(
     match query(
         "INSERT INTO admins (
             email, get_admin, post_admin, put_admin, post_bus_schedule,
-            put_bus_schedule, post_event,
-            post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement
+            put_bus_schedule, post_event, manage_events,
+            post_mess_menu, post_outlet, delete_outlet, put_outlet, post_announcement,
+            post_representative, delete_representative, put_representative
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (email)
         DO UPDATE SET
             get_admin = EXCLUDED.get_admin,
@@ -121,11 +122,15 @@ pub async fn add_admin(
             post_bus_schedule = EXCLUDED.post_bus_schedule,
             put_bus_schedule = EXCLUDED.put_bus_schedule,
             post_event = EXCLUDED.post_event,
+            manage_events = EXCLUDED.manage_events,
             post_mess_menu = EXCLUDED.post_mess_menu,
             post_outlet = EXCLUDED.post_outlet,
             delete_outlet = EXCLUDED.delete_outlet,
             put_outlet = EXCLUDED.put_outlet,
-            post_announcement = EXCLUDED.post_announcement",
+            post_announcement = EXCLUDED.post_announcement,
+            post_representative = EXCLUDED.post_representative,
+            delete_representative = EXCLUDED.delete_representative,
+            put_representative = EXCLUDED.put_representative",
     )
     .bind(&admin.email)
     .bind(&admin.permissions.get_admin)
@@ -134,11 +139,15 @@ pub async fn add_admin(
     .bind(&admin.permissions.post_bus_schedule)
     .bind(&admin.permissions.put_bus_schedule)
     .bind(&admin.permissions.post_event)
+    .bind(&admin.permissions.manage_events)
     .bind(&admin.permissions.post_mess_menu)
     .bind(&admin.permissions.post_outlet)
     .bind(&admin.permissions.delete_outlet)
     .bind(&admin.permissions.put_outlet)
     .bind(&admin.permissions.post_announcement)
+    .bind(&admin.permissions.post_representative)
+    .bind(&admin.permissions.delete_representative)
+    .bind(&admin.permissions.put_representative)
     .execute(&state.pool)
     .await
     {

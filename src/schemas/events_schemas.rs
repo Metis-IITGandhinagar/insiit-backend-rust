@@ -13,6 +13,8 @@ pub struct EventEntry {
     pub address: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub start_datetime: OffsetDateTime,
+    #[serde(skip_deserializing)]
+    pub approved: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,10 +37,17 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             poster_url TEXT,
             added_by_email VARCHAR(255) NOT NULL,
             address TEXT,
-            start_datetime TIMESTAMPTZ NOT NULL
+            start_datetime TIMESTAMPTZ NOT NULL,
+            approved BOOLEAN NOT NULL DEFAULT FALSE
         );
     ",
     )
     .execute(pool)
-    .await
+    .await?;
+    query("ALTER TABLE events ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT TRUE;")
+        .execute(pool)
+        .await?;
+    query("ALTER TABLE events ALTER COLUMN approved SET DEFAULT FALSE;")
+        .execute(pool)
+        .await
 }
