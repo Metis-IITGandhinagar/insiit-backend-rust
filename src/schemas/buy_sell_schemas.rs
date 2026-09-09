@@ -19,6 +19,7 @@ pub struct BuySellEntry {
     #[sqlx(json)]
     pub bids: Vec<BidEntry>,
     pub img_urls: Vec<String>,
+    pub asking_price_in_rs: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -26,6 +27,8 @@ pub struct BuySellRequest {
     pub item_name: String,
     pub description: String,
     pub base64_images: Vec<String>,
+    #[serde(default)]
+    pub asking_price_in_rs: Option<f64>,
 }
 
 #[derive(Type, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
@@ -70,9 +73,15 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             added_by_email VARCHAR(255) NOT NULL,
             status buy_sell_item_status NOT NULL DEFAULT 'selling'::buy_sell_item_status,
             bids JSONB NOT NULL DEFAULT '[]',
-            img_urls VARCHAR(255)[] NOT NULL DEFAULT '{}'
+            img_urls VARCHAR(255)[] NOT NULL DEFAULT '{}',
+            asking_price_in_rs DOUBLE PRECISION
         );
     ",
+    )
+    .execute(pool)
+    .await?;
+    query(
+        "ALTER TABLE buysellentries ADD COLUMN IF NOT EXISTS asking_price_in_rs DOUBLE PRECISION;",
     )
     .execute(pool)
     .await

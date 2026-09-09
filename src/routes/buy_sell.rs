@@ -29,7 +29,7 @@ async fn get_all_buy_sell(
     State(state): State<AppState>,
 ) -> Result<JsonResponse<Vec<BuySellEntry>>, (StatusCode, String)> {
     match query_as::<_, BuySellEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries WHERE status = 'selling'"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs FROM buysellentries WHERE status = 'selling'"
     )
         .fetch_all(&state.pool)
         .await {
@@ -49,7 +49,7 @@ async fn get_buy_sell_by_id(
     Path(id): Path<i32>,
 ) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     match query_as::<_, BuySellEntry>(
-        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls FROM buysellentries WHERE id = $1"
+        "SELECT id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs FROM buysellentries WHERE id = $1"
     )
         .bind(id)
         .fetch_one(&state.pool).await {
@@ -110,9 +110,9 @@ async fn add_buy_sell(
     }
 
     match query_as::<_, BuySellEntry>(
-        "INSERT INTO buysellentries(item_name, description, added_on_timestamp, added_by_email, img_urls)
-        VALUES($1, $2, $3, $4, $5)
-        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls;
+        "INSERT INTO buysellentries(item_name, description, added_on_timestamp, added_by_email, img_urls, asking_price_in_rs)
+        VALUES($1, $2, $3, $4, $5, $6)
+        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs;
         "
     )
         .bind(&buy_sell_request.item_name)
@@ -120,6 +120,7 @@ async fn add_buy_sell(
         .bind(timestamp)
         .bind(email)
         .bind(img_urls)
+        .bind(buy_sell_request.asking_price_in_rs)
         .fetch_one(&state.pool).await {
             Ok(new_buy_sell_entry) => {
                 log::info!("BuySell: Added item buy_sell_entry");
@@ -175,14 +176,15 @@ async fn edit_buy_sell(
 
     match query_as::<_, BuySellEntry>(
         "UPDATE buysellentries
-        SET item_name = $1, description = $2, img_urls = $3
-        WHERE id = $4 AND added_by_email = $5
-        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls
+        SET item_name = $1, description = $2, img_urls = $3, asking_price_in_rs = $4
+        WHERE id = $5 AND added_by_email = $6
+        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs
         "
     )
         .bind(&buy_sell_entry.item_name)
         .bind(&buy_sell_entry.description)
         .bind(img_urls)
+        .bind(buy_sell_entry.asking_price_in_rs)
         .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {
@@ -278,7 +280,7 @@ async fn mark_sold(
         "UPDATE buysellentries
         SET status = 'sold'
         WHERE id = $1 AND added_by_email = $2
-        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls
+        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs
         "
     )
         .bind(buy_sell_entry.id)
@@ -326,7 +328,7 @@ async fn add_bid(
         "UPDATE buysellentries
         SET bids = COALESCE(bids, '[]'::jsonb) || $1::jsonb
         WHERE id = $2 AND (status = 'selling')
-        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls
+        RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs
         "
     )
         .bind(&serde_json::to_value(&bid_request).expect("bids is a vec"))
