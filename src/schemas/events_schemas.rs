@@ -13,6 +13,8 @@ pub struct EventEntry {
     pub address: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub start_datetime: OffsetDateTime,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub end_datetime: Option<OffsetDateTime>,
     #[serde(skip_deserializing)]
     pub approved: bool,
 }
@@ -25,6 +27,8 @@ pub struct EventRequest {
     pub address: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub start_datetime: OffsetDateTime,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub end_datetime: Option<OffsetDateTime>,
 }
 
 pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
@@ -38,12 +42,16 @@ pub async fn initialize_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Erro
             added_by_email VARCHAR(255) NOT NULL,
             address TEXT,
             start_datetime TIMESTAMPTZ NOT NULL,
+            end_datetime TIMESTAMPTZ,
             approved BOOLEAN NOT NULL DEFAULT FALSE
         );
     ",
     )
     .execute(pool)
     .await?;
+    query("ALTER TABLE events ADD COLUMN IF NOT EXISTS end_datetime TIMESTAMPTZ;")
+        .execute(pool)
+        .await?;
     query("ALTER TABLE events ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT TRUE;")
         .execute(pool)
         .await?;

@@ -31,7 +31,7 @@ async fn get_events(
     State(state): State<AppState>,
 ) -> Result<JsonResponse<Vec<EventEntry>>, (StatusCode, String)> {
     match query_as::<_, EventEntry>(
-        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, approved FROM events WHERE start_datetime > $1 AND approved = TRUE"
+        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved FROM events WHERE start_datetime > $1 AND approved = TRUE"
     )
         .bind(OffsetDateTime::now_utc())
         .fetch_all(&state.pool).await {
@@ -45,7 +45,7 @@ async fn get_event(
     Path(id): Path<i32>,
 ) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
     match query_as::<_, EventEntry>(
-        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, approved FROM events WHERE id = $1"
+        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved FROM events WHERE id = $1"
     )
         .bind(id)
         .fetch_one(&state.pool).await {
@@ -74,7 +74,7 @@ async fn get_pending_events(
         }
     };
     match query_as::<_, EventEntry>(
-        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, approved FROM events WHERE approved = FALSE ORDER BY start_datetime"
+        "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved FROM events WHERE approved = FALSE ORDER BY start_datetime"
     )
         .fetch_all(&state.pool).await {
             Ok(events) => Ok(Json(events)),
@@ -109,7 +109,7 @@ async fn approve_event(
         "UPDATE events
         SET approved = TRUE
         WHERE id = $1
-        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, approved;
+        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved;
         "
     )
         .bind(id)
@@ -155,6 +155,16 @@ async fn add_event(
         },
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
+
+    if let Some(end_dt) = event_request.end_datetime {
+        if end_dt <= event_request.start_datetime {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                String::from("end_datetime must be later than start_datetime"),
+            ));
+        }
+    }
+
     let poster_url = if let Some(poster_base64) = &event_request.poster_base64 {
         match save_image(poster_base64, &state.image_directory).await {
             Ok(url) => Some(url),
@@ -170,9 +180,9 @@ async fn add_event(
         None
     };
     match query_as::<_, EventEntry>(
-        "INSERT INTO events(name, description, poster_url, added_by_email, address, start_datetime)
-        VALUES($1, $2, $3, $4, $5, $6)
-        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, approved;
+        "INSERT INTO events(name, description, poster_url, added_by_email, address, start_datetime, end_datetime)
+        VALUES($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved;
         ",
     )
     .bind(&event_request.name)
@@ -181,6 +191,7 @@ async fn add_event(
     .bind(email)
     .bind(&event_request.address)
     .bind(&event_request.start_datetime)
+    .bind(&event_request.end_datetime)
     .fetch_one(&state.pool)
     .await
     {
@@ -220,6 +231,15 @@ async fn edit_event(
         None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     };
 
+    if let Some(end_dt) = event_request.end_datetime {
+        if end_dt <= event_request.start_datetime {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                String::from("end_datetime must be later than start_datetime"),
+            ));
+        }
+    }
+
     let poster_url = if let Some(poster_base64) = &event_request.poster_base64 {
         match save_image(poster_base64, &state.image_directory).await {
             Ok(url) => Some(url),
@@ -237,9 +257,9 @@ async fn edit_event(
 
     match query_as::<_, EventEntry>(
         "UPDATE events
-        SET name = $1, description = $2, poster_url = COALESCE($3, poster_url), address = $4, start_datetime = $5
-        WHERE id = $6 AND added_by_email = $7
-        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, approved;
+        SET name = $1, description = $2, poster_url = COALESCE($3, poster_url), address = $4, start_datetime = $5, end_datetime = $6
+        WHERE id = $7 AND added_by_email = $8
+        RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved;
         "
     )
         .bind(&event_request.name)
@@ -247,6 +267,7 @@ async fn edit_event(
         .bind(&poster_url)
         .bind(&event_request.address)
         .bind(&event_request.start_datetime)
+        .bind(&event_request.end_datetime)
         .bind(id)
         .bind(email)
         .fetch_one(&state.pool).await {
