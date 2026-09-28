@@ -15,6 +15,7 @@ use crate::AppState;
 use crate::schemas::admin_schemas::AdminPermission;
 use crate::schemas::events_schemas::{EventEntry, EventRequest};
 use crate::utils::save_image;
+use crate::schemas::push_schemas;
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
@@ -24,6 +25,7 @@ pub fn get_routes() -> Router<AppState> {
         .route("/events", post(add_event))
         .route("/events/{id}", put(edit_event))
         .route("/events/{id}/approve", put(approve_event))
+        .route("/events/{id}/reject", put(reject_event))
         .route("/events/{id}", delete(delete_event))
 }
 
@@ -115,6 +117,10 @@ async fn approve_event(
         .bind(id)
         .fetch_one(&state.pool).await {
             Ok(event) => {
+                if let Err(e) = push_schemas::enqueue_approval(&state.pool, event.id, event.start_datetime).await {
+                    log::error!("Events: Failed to enqueue approval notifications: {e}");
+                    return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't schedule event notifications")));
+                }
                 log::info!("Events: Approved event_entry");
                 Ok(Json(event))
             },
@@ -127,6 +133,24 @@ async fn approve_event(
                 Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't approve event entry in the database")))
             }
         }
+}
+
+async fn reject_event(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+) -> Result<JsonResponse<()>, (StatusCode, String)> {
+    match AdminPermission::ManageEvents.granted_to(auth_header.token().to_string(), state.clone()).await {
+        Ok(Some(_)) => (),
+        Ok(None) => return Err((StatusCode::FORBIDDEN, "Forbidden".to_owned())),
+        Err(e) => { log::error!("Events: Couldn't authenticate user: {e}"); return Err((StatusCode::INTERNAL_SERVER_ERROR, "Couldn't authenticate user".to_owned())); }
+    }
+    let result = query("UPDATE events SET approved = FALSE WHERE id = $1").bind(id).execute(&state.pool).await
+        .map_err(|e| { log::error!("Events: Error rejecting event: {e}"); (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't reject event".to_owned()) })?;
+    if result.rows_affected() == 0 { return Err((StatusCode::NOT_FOUND, "event not found".to_owned())); }
+    push_schemas::cancel_pending(&state.pool, id).await
+        .map_err(|e| { log::error!("Events: Couldn't cancel event notifications: {e}"); (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't cancel event notifications".to_owned()) })?;
+    Ok(Json(()))
 }
 
 async fn add_event(
@@ -272,6 +296,10 @@ async fn edit_event(
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_event_entry) => {
+                if let Err(e) = push_schemas::reschedule_reminders(&state.pool, id, updated_event_entry.start_datetime).await {
+                    log::error!("Events: Failed to reschedule reminders: {e}");
+                    return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't reschedule event notifications")));
+                }
                 log::info!("Events: Edited event_entry");
                 Ok(Json(updated_event_entry))
             },

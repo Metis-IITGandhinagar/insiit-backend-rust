@@ -65,6 +65,10 @@ async fn main() {
         firebase_token_validator,
         image_directory: env_vars.image_directory.clone(),
     };
+    tokio::spawn(crate::schemas::push_schemas::run_worker(
+        pool.clone(),
+        env_vars.firebase_project_id.clone(),
+    ));
     let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
@@ -84,6 +88,7 @@ async fn main() {
         .merge(bus_routes)
         .merge(buy_sell_routes)
         .merge(events_routes)
+        .merge(routes::push::get_routes())
         .merge(lost_found_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
