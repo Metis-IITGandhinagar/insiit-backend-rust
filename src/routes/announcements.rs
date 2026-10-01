@@ -7,11 +7,10 @@ use axum::{
 use axum_extra::{
     headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
 };
-use rs_firebase_admin_sdk::jwt::TokenValidator;
 use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
-use crate::auth::verify_and_execute;
+use crate::auth::{email_from_token, verify_and_execute};
 use crate::schemas::admin_schemas::AdminPermission;
 use crate::schemas::announcements_schemas::{AnnouncementEntry, AnnouncementRequest};
 use crate::{AppState, utils::save_image};
@@ -72,26 +71,7 @@ async fn delete_announcement(
     Path(id): Path<i32>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("Announcements: Found user for saving announcement_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("Announcement: Couldn't find user for saving announcement_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     match query("DELETE FROM announcements WHERE id = $1 AND added_by_email = $2")
         .bind(id)
         .bind(email)
@@ -123,26 +103,7 @@ async fn edit_announcement(
     Json(announcement_request): Json<AnnouncementRequest>,
 ) -> Result<JsonResponse<AnnouncementEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("Announcement: Found user for saving announcement_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("Announcement: Couldn't find user for saving announcement_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
 
     let img_url = if let Some(img_base64) = &announcement_request.img_base64 {
         match save_image(img_base64, &state.image_directory).await {

@@ -7,15 +7,15 @@ use axum::{
 use axum_extra::{
     headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
 };
-use rs_firebase_admin_sdk::jwt::TokenValidator;
 use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
 use crate::AppState;
+use crate::auth::email_from_token;
 use crate::schemas::admin_schemas::AdminPermission;
 use crate::schemas::events_schemas::{EventEntry, EventRequest};
-use crate::utils::save_image;
 use crate::schemas::push_schemas;
+use crate::utils::save_image;
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
@@ -27,6 +27,17 @@ pub fn get_routes() -> Router<AppState> {
         .route("/events/{id}/approve", put(approve_event))
         .route("/events/{id}/reject", put(reject_event))
         .route("/events/{id}", delete(delete_event))
+}
+
+/// An event that ends before it starts is a typo, not a schedule.
+fn check_datetimes(event_request: &EventRequest) -> Result<(), (StatusCode, String)> {
+    match event_request.end_datetime {
+        Some(end_datetime) if end_datetime <= event_request.start_datetime => Err((
+            StatusCode::BAD_REQUEST,
+            String::from("end_datetime must be later than start_datetime"),
+        )),
+        _ => Ok(()),
+    }
 }
 
 async fn get_events(
@@ -118,8 +129,7 @@ async fn approve_event(
         .fetch_one(&state.pool).await {
             Ok(event) => {
                 if let Err(e) = push_schemas::enqueue_approval(&state.pool, event.id, event.start_datetime).await {
-                    log::error!("Events: Failed to enqueue approval notifications: {e}");
-                    return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't schedule event notifications")));
+                    log::error!("Events: Couldn't schedule notifications for approved event_entry: {e}");
                 }
                 log::info!("Events: Approved event_entry");
                 Ok(Json(event))
@@ -140,17 +150,46 @@ async fn reject_event(
     TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
     Path(id): Path<i32>,
 ) -> Result<JsonResponse<()>, (StatusCode, String)> {
-    match AdminPermission::ManageEvents.granted_to(auth_header.token().to_string(), state.clone()).await {
+    let token = auth_header.token().to_string();
+    match AdminPermission::ManageEvents
+        .granted_to(token, state.clone())
+        .await
+    {
         Ok(Some(_)) => (),
-        Ok(None) => return Err((StatusCode::FORBIDDEN, "Forbidden".to_owned())),
-        Err(e) => { log::error!("Events: Couldn't authenticate user: {e}"); return Err((StatusCode::INTERNAL_SERVER_ERROR, "Couldn't authenticate user".to_owned())); }
+        Ok(None) => return Err((StatusCode::FORBIDDEN, String::from("Forbidden"))),
+        Err(e) => {
+            log::error!("Events: Couldn't authenticate user: {e}");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Couldn't authenticate user"),
+            ));
+        }
+    };
+    let rejection = query("UPDATE events SET approved = FALSE WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await;
+    match rejection {
+        Ok(result) if result.rows_affected() > 0 => {
+            // Nothing queued for a rejected event should still go out.
+            if let Err(e) = push_schemas::cancel_pending(&state.pool, id).await {
+                log::error!("Events: Couldn't cancel notifications for rejected event_entry: {e}");
+            }
+            log::info!("Events: Rejected event_entry");
+            Ok(Json(()))
+        }
+        Ok(_) => {
+            log::info!("Events: didn't find any event_entry to reject.");
+            Err((StatusCode::NOT_FOUND, String::from("event not found")))
+        }
+        Err(e) => {
+            log::error!("Events: Error rejecting event_entry: {e}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Couldn't reject event entry in the database"),
+            ))
+        }
     }
-    let result = query("UPDATE events SET approved = FALSE WHERE id = $1").bind(id).execute(&state.pool).await
-        .map_err(|e| { log::error!("Events: Error rejecting event: {e}"); (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't reject event".to_owned()) })?;
-    if result.rows_affected() == 0 { return Err((StatusCode::NOT_FOUND, "event not found".to_owned())); }
-    push_schemas::cancel_pending(&state.pool, id).await
-        .map_err(|e| { log::error!("Events: Couldn't cancel event notifications: {e}"); (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't cancel event notifications".to_owned()) })?;
-    Ok(Json(()))
 }
 
 async fn add_event(
@@ -159,36 +198,8 @@ async fn add_event(
     Json(event_request): Json<EventRequest>,
 ) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("Events: Found user for saving event_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("Events: Couldn't find user for saving event_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
-
-    if let Some(end_dt) = event_request.end_datetime {
-        if end_dt <= event_request.start_datetime {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                String::from("end_datetime must be later than start_datetime"),
-            ));
-        }
-    }
-
+    let email = email_from_token(&state, token).await?;
+    check_datetimes(&event_request)?;
     let poster_url = if let Some(poster_base64) = &event_request.poster_base64 {
         match save_image(poster_base64, &state.image_directory).await {
             Ok(url) => Some(url),
@@ -234,35 +245,8 @@ async fn edit_event(
     Json(event_request): Json<EventRequest>,
 ) -> Result<JsonResponse<EventEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("Events: Found user for editing event_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("Events: Couldn't find user for editing event_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
-
-    if let Some(end_dt) = event_request.end_datetime {
-        if end_dt <= event_request.start_datetime {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                String::from("end_datetime must be later than start_datetime"),
-            ));
-        }
-    }
+    let email = email_from_token(&state, token).await?;
+    check_datetimes(&event_request)?;
 
     let poster_url = if let Some(poster_base64) = &event_request.poster_base64 {
         match save_image(poster_base64, &state.image_directory).await {
@@ -297,8 +281,7 @@ async fn edit_event(
         .fetch_one(&state.pool).await {
             Ok(updated_event_entry) => {
                 if let Err(e) = push_schemas::reschedule_reminders(&state.pool, id, updated_event_entry.start_datetime).await {
-                    log::error!("Events: Failed to reschedule reminders: {e}");
-                    return Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't reschedule event notifications")));
+                    log::error!("Events: Couldn't reschedule reminders for edited event_entry: {e}");
                 }
                 log::info!("Events: Edited event_entry");
                 Ok(Json(updated_event_entry))
@@ -320,31 +303,7 @@ async fn delete_event(
     Path(id): Path<i32>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state
-        .firebase_token_validator
-        .clone()
-        .validate(token.clone())
-        .await
-    {
-        Ok(user) => {
-            log::info!("Events: Found user for saving event_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("Events: Couldn't find user for saving event_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token.clone()).await?;
     let can_approve = matches!(
         AdminPermission::ManageEvents
             .granted_to(token, state.clone())

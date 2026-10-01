@@ -31,6 +31,11 @@ pub struct BuySellRequest {
     pub asking_price_in_rs: Option<f64>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct MarkSoldRequest {
+    pub id: i32,
+}
+
 #[derive(Type, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
 #[sqlx(type_name = "buy_sell_item_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

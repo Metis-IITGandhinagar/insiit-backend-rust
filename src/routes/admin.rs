@@ -8,11 +8,10 @@ use axum_extra::{
     TypedHeader,
     headers::{Authorization, authorization::Bearer},
 };
-use rs_firebase_admin_sdk::jwt::TokenValidator;
 use sqlx::{query, query_as};
 
 use crate::AppState;
-use crate::auth::verify_and_execute;
+use crate::auth::{email_from_token, verify_and_execute};
 use crate::schemas::admin_schemas::{AdminEntry, AdminPermission};
 
 pub fn get_routes() -> Router<AppState> {
@@ -50,32 +49,7 @@ async fn get_admin_permissions(
     TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
 ) -> Result<JsonResponse<AdminEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => user,
-        Err(e) => {
-            log::info!("User not found by validator: {e}");
-            return Err((StatusCode::FORBIDDEN, String::from("Invalid user")));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => {
-                log::error!(
-                    "This just shouldn't ha
-                    ppen ever, a user email should always be convertable to str"
-                );
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    String::from("This shouldn't happen in any case"),
-                ));
-            }
-        },
-        None => {
-            log::info!("User entry in firebase doesn't have an email");
-            return Err((StatusCode::FORBIDDEN, String::from("Invalid user")));
-        }
-    };
+    let email = email_from_token(&state, token).await?;
     // Check if this query breaks, cause if admin doesn't exist, then AdminEntry value may not be
     // fetched from the db and it may return Err, and return internal server error to client
     // rather than forbidden

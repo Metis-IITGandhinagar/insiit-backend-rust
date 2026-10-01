@@ -7,13 +7,13 @@ use axum::{
 use axum_extra::{
     headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
 };
-use rs_firebase_admin_sdk::jwt::TokenValidator;
 use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
 use crate::AppState;
+use crate::auth::email_from_token;
 use crate::schemas::lost_found_schemas::{
-    LostFoundClaim, LostFoundEntry, LostFoundRequest, LostFoundStatus,
+    LostFoundClaim, LostFoundEntry, LostFoundRequest, LostFoundStatus, MarkFoundRequest,
 };
 
 pub fn get_routes() -> Router<AppState> {
@@ -76,26 +76,7 @@ async fn add_lost_found(
     Json(lost_found_request): Json<LostFoundRequest>,
 ) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("LostFound: Found user for saving lost_found_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     let timestamp = OffsetDateTime::now_utc();
     let mut img_urls = vec![];
     for img in &lost_found_request.base64_images {
@@ -141,26 +122,7 @@ async fn edit_lost_found(
     Json(lost_found_request): Json<LostFoundRequest>,
 ) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("LostFound: Found user for saving lost_found_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     let mut img_urls = vec![];
     for img in &lost_found_request.base64_images {
         match crate::utils::save_image(img, &state.image_directory).await {
@@ -209,26 +171,7 @@ async fn delete_lost_found(
     Path(id): Path<i32>,
 ) -> Result<JsonResponse<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("LostFound: Found user for saving lost_found_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     match query("DELETE FROM lostfoundentries WHERE id = $1 AND added_by_email = $2")
         .bind(id)
         .bind(email)
@@ -253,29 +196,10 @@ async fn delete_lost_found(
 async fn mark_found(
     State(state): State<AppState>,
     TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
-    Json(mut lost_found_entry): Json<LostFoundEntry>,
+    Json(mark_found_request): Json<MarkFoundRequest>,
 ) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("LostFound: Found user for mark_found lost_found_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("LostFound: Couldn't find user for mark_found lost_found_entry");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     match query_as::<_, LostFoundEntry>(
         "UPDATE lostfoundentries
         SET status = 'found'
@@ -283,7 +207,7 @@ async fn mark_found(
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls
         "
     )
-        .bind(lost_found_entry.id)
+        .bind(mark_found_request.id)
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_lost_found_entry) => {
@@ -303,30 +227,18 @@ async fn claim_found(
     Json(mut claim_request): Json<LostFoundClaim>,
 ) -> Result<JsonResponse<LostFoundEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("LostFound: Found user for claim_found lost_found_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("LostFound: Couldn't find user for saving lost_found_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     claim_request.claimed_by_email = String::from(email);
+    claim_request.claim_timestamp = OffsetDateTime::now_utc();
     match query_as::<_, LostFoundEntry>(
+        // Drop this claimer's previous claim before appending, so re-posting a claim
+        // replaces it instead of stacking up duplicates.
         "UPDATE lostfoundentries
-        SET found_claims = COALESCE(found_claims, '[]'::jsonb) || $1::jsonb,
+        SET found_claims = (
+            SELECT COALESCE(jsonb_agg(claim), '[]'::jsonb)
+            FROM jsonb_array_elements(COALESCE(found_claims, '[]'::jsonb)) AS claim
+            WHERE claim->>'claimed_by_email' IS DISTINCT FROM $3
+        ) || $1::jsonb,
             status = 'claimed_to_be_found'
         WHERE id = $2 AND (status = 'claimed_to_be_found' OR status = 'lost')
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, found_claims, img_urls
@@ -334,6 +246,7 @@ async fn claim_found(
     )
         .bind(&serde_json::to_value(&claim_request).expect("found_clams is a vec"))
         .bind(&claim_request.id)
+        .bind(&claim_request.claimed_by_email)
         .fetch_one(&state.pool).await {
             Ok(update_lost_found_entry) => Ok(Json(update_lost_found_entry)),
             Err(sqlx::error::Error::RowNotFound) => {

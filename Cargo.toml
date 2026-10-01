@@ -10,10 +10,13 @@ base64 = "0.23.0"
 dotenvy = "0.15.7"
 # WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
 error-stack = "0.7.1"
+# WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
+google-cloud-auth = "1.13.0"
 log = "0.4.33"
+# WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
+# default-features is off so we reuse the TLS stack rs-firebase-admin-sdk already enables
+reqwest = { version = "0.13", features = ["json"], default-features = false }
 rs-firebase-admin-sdk = { version = "5.0.0", features = ["tokens"] }
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
-reqwest = { version = "0.12", features = ["json", "form", "rustls-tls"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 simplelog = { version = "0.12.2", features = ["termcolor"] }

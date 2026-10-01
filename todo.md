@@ -11,7 +11,11 @@ Things remaining:
 
 Fix all the warnings and todos and bugs in code
 
-added_by_email is taken from the request body instead of the auth token in add_event, add_announcement, add_outlet, add_bus, so a caller can spoof it. It should be derived from the validated Firebase token like the other handlers.
-The token -> email validation block is duplicated a lot of times across handlers, extract it into a shared middleware.
-bid_timestamp/claim_timestamp are client-settable (only defaulted, not overwritten server-side), so a caller can spoof the time. Set them in add_bid/claim_found instead.
-edit_buy_sell/edit_lost_found cannot edit images. re-save from base64_images the way add_* does.
+edit_buy_sell/edit_lost_found overwrite img_urls with whatever base64_images holds, so
+editing an entry without re-uploading its images silently deletes them. Keep the existing
+urls when base64_images is empty.
+
+Making add_* idempotent needs an Idempotency-Key header plus a table of seen keys, since
+announcements/events/buy-sell/lost-found/outlets have no natural key. add_bid and
+claim_found are done (deduped per user), add_admin and add_mess_menu were already
+idempotent, and add_bus/add_representative could use a UNIQUE constraint + ON CONFLICT.

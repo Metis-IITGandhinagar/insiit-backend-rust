@@ -39,6 +39,11 @@ pub struct LostFoundClaim {
     pub claim_timestamp: OffsetDateTime,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct MarkFoundRequest {
+    pub id: i32,
+}
+
 #[derive(Type, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
 #[sqlx(type_name = "lost_found_item_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

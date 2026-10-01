@@ -7,6 +7,7 @@ use axum_extra::{
     TypedHeader,
     headers::{Authorization, authorization::Bearer},
 };
+use rs_firebase_admin_sdk::jwt::TokenValidator;
 use std::{future::Future, pin::Pin};
 
 use crate::AppState;
@@ -57,5 +58,29 @@ where
                 }
             }
         })
+    }
+}
+
+/// The token -> email step every authenticated handler starts with.
+pub async fn email_from_token(
+    state: &AppState,
+    token: String,
+) -> Result<String, (StatusCode, String)> {
+    let user = match state.firebase_token_validator.clone().validate(token).await {
+        Ok(user) => user,
+        Err(e) => {
+            log::error!("Couldn't authenticate user: {e}");
+            return Err((
+                StatusCode::FORBIDDEN,
+                String::from("Couldn't authenticate user"),
+            ));
+        }
+    };
+    match user.get("email") {
+        Some(value) => match value.as_str() {
+            Some(email) => Ok(String::from(email)),
+            None => Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
+        },
+        None => Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
     }
 }

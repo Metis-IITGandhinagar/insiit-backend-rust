@@ -14,6 +14,7 @@ use tower_http::{cors::CorsLayer, services::ServeDir};
 
 mod auth;
 mod helpers;
+mod notifications;
 mod routes;
 mod schemas;
 pub mod utils;
@@ -65,10 +66,10 @@ async fn main() {
         firebase_token_validator,
         image_directory: env_vars.image_directory.clone(),
     };
-    tokio::spawn(crate::schemas::push_schemas::run_worker(
-        pool.clone(),
-        env_vars.firebase_project_id.clone(),
-    ));
+    // Queued event notifications are delivered off the request path.
+    let notifier =
+        notifications::Notifier::new(&firebase_app, env_vars.firebase_project_id.clone());
+    tokio::spawn(notifications::run_worker(pool.clone(), notifier));
     let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
@@ -79,6 +80,7 @@ async fn main() {
     let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
     let outlets_routes = routes::outlets::get_routes();
+    let push_routes = routes::push::get_routes();
     let representatives_routes = routes::representatives::get_routes();
     let router = Router::new()
         .route("/", get(async || "Go to /api-docs for API Documentation"))
@@ -88,10 +90,10 @@ async fn main() {
         .merge(bus_routes)
         .merge(buy_sell_routes)
         .merge(events_routes)
-        .merge(routes::push::get_routes())
         .merge(lost_found_routes)
         .merge(mess_routes)
         .merge(outlets_routes)
+        .merge(push_routes)
         .merge(representatives_routes)
         .layer(cors)
         .with_state(state);

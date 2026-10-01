@@ -7,12 +7,14 @@ use axum::{
 use axum_extra::{
     headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
 };
-use rs_firebase_admin_sdk::jwt::TokenValidator;
 use sqlx::{query, query_as};
 use time::OffsetDateTime;
 
 use crate::AppState;
-use crate::schemas::buy_sell_schemas::{BidEntry, BuySellEntry, BuySellRequest, BuySellStatus};
+use crate::auth::email_from_token;
+use crate::schemas::buy_sell_schemas::{
+    BidEntry, BuySellEntry, BuySellRequest, BuySellStatus, MarkSoldRequest,
+};
 
 pub fn get_routes() -> Router<AppState> {
     Router::new()
@@ -74,26 +76,7 @@ async fn add_buy_sell(
     Json(buy_sell_request): Json<BuySellRequest>,
 ) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("BuySell: Found user for saving buy_sell_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     let timestamp = OffsetDateTime::now_utc();
     let mut img_urls = vec![];
     for img in &buy_sell_request.base64_images {
@@ -140,26 +123,7 @@ async fn edit_buy_sell(
     Json(buy_sell_entry): Json<BuySellRequest>,
 ) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("BuySell: Found user for saving buy_sell_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     let mut img_urls = vec![];
     for img in &buy_sell_entry.base64_images {
         match crate::utils::save_image(img, &state.image_directory).await {
@@ -209,26 +173,7 @@ async fn delete_buy_sell(
     Path(id): Path<i32>,
 ) -> Result<JsonResponse<()>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("BuySell: Found user for saving buy_sell_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     match query("DELETE FROM buysellentries WHERE id = $1 AND added_by_email = $2")
         .bind(id)
         .bind(email)
@@ -253,29 +198,10 @@ async fn delete_buy_sell(
 async fn mark_sold(
     State(state): State<AppState>,
     TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
-    Json(mut buy_sell_entry): Json<BuySellEntry>,
+    Json(mark_sold_request): Json<MarkSoldRequest>,
 ) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("BuySell: Found user for mark_sold buy_sell_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("BuySell: Couldn't find user for mark_sold buy_sell_entry");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     match query_as::<_, BuySellEntry>(
         "UPDATE buysellentries
         SET status = 'sold'
@@ -283,7 +209,7 @@ async fn mark_sold(
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs
         "
     )
-        .bind(buy_sell_entry.id)
+        .bind(mark_sold_request.id)
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_buy_sell_entry) => {
@@ -303,36 +229,25 @@ async fn add_bid(
     Json(mut bid_request): Json<BidEntry>,
 ) -> Result<JsonResponse<BuySellEntry>, (StatusCode, String)> {
     let token = auth_header.token().to_string();
-    let user = match state.firebase_token_validator.clone().validate(token).await {
-        Ok(user) => {
-            log::info!("BuySell: Found user for add_bid buy_sell_entry");
-            user
-        }
-        Err(e) => {
-            log::error!("BuySell: Couldn't find user for saving buy_sell_entry: {e}");
-            return Err((
-                StatusCode::FORBIDDEN,
-                String::from("Couldn't authenticate user"),
-            ));
-        }
-    };
-    let email = match user.get("email") {
-        Some(value) => match value.as_str() {
-            Some(email) => email,
-            None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-        },
-        None => return Err((StatusCode::FORBIDDEN, String::from("Invalid user"))),
-    };
+    let email = email_from_token(&state, token).await?;
     bid_request.bid_by_email = String::from(email);
+    bid_request.bid_timestamp = OffsetDateTime::now_utc();
     match query_as::<_, BuySellEntry>(
+        // Drop this bidder's previous bid before appending, so re-posting a bid
+        // replaces it instead of stacking up duplicates.
         "UPDATE buysellentries
-        SET bids = COALESCE(bids, '[]'::jsonb) || $1::jsonb
+        SET bids = (
+            SELECT COALESCE(jsonb_agg(bid), '[]'::jsonb)
+            FROM jsonb_array_elements(COALESCE(bids, '[]'::jsonb)) AS bid
+            WHERE bid->>'bid_by_email' IS DISTINCT FROM $3
+        ) || $1::jsonb
         WHERE id = $2 AND (status = 'selling')
         RETURNING id, item_name, description, added_on_timestamp, added_by_email, status, bids, img_urls, asking_price_in_rs
         "
     )
         .bind(&serde_json::to_value(&bid_request).expect("bids is a vec"))
         .bind(&bid_request.item_id)
+        .bind(&bid_request.bid_by_email)
         .fetch_one(&state.pool).await {
             Ok(update_buy_sell_entry) => Ok(Json(update_buy_sell_entry)),
             Err(sqlx::error::Error::RowNotFound) => {
