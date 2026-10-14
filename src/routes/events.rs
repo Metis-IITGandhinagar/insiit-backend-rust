@@ -121,7 +121,7 @@ async fn approve_event(
     match query_as::<_, EventEntry>(
         "UPDATE events
         SET approved = TRUE
-        WHERE id = $1
+        WHERE id = $1 AND approved = FALSE
         RETURNING id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved;
         "
     )
@@ -135,8 +135,16 @@ async fn approve_event(
                 Ok(Json(event))
             },
             Err(sqlx::error::Error::RowNotFound) => {
-                log::info!("Events: didn't find any event_entry to approve.");
-                Err((StatusCode::NOT_FOUND, String::from("event not found")))
+                match query_as::<_, EventEntry>(
+                    "SELECT id, name, description, poster_url, added_by_email, address, start_datetime, end_datetime, approved FROM events WHERE id = $1 AND approved = TRUE"
+                ).bind(id).fetch_optional(&state.pool).await {
+                    Ok(Some(event)) => Ok(Json(event)),
+                    Ok(None) => Err((StatusCode::NOT_FOUND, String::from("event not found or already processed"))),
+                    Err(e) => {
+                        log::error!("Events: Couldn't read already-approved event: {e}");
+                        Err((StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't get event")))
+                    }
+                }
             },
             Err(e) => {
                 log::error!("Events: Error approving event_entry: {e}");
@@ -214,6 +222,7 @@ async fn add_event(
     } else {
         None
     };
+
     match query_as::<_, EventEntry>(
         "INSERT INTO events(name, description, poster_url, added_by_email, address, start_datetime, end_datetime)
         VALUES($1, $2, $3, $4, $5, $6, $7)
@@ -263,6 +272,18 @@ async fn edit_event(
         None
     };
 
+    let previous_start = query_as::<_, OffsetDateTime>(
+        "SELECT start_datetime FROM events WHERE id = $1 AND added_by_email = $2"
+    )
+    .bind(id)
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        log::error!("Events: Couldn't read prior schedule: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update event"))
+    })?;
+
     match query_as::<_, EventEntry>(
         "UPDATE events
         SET name = $1, description = $2, poster_url = COALESCE($3, poster_url), address = $4, start_datetime = $5, end_datetime = $6
@@ -280,8 +301,10 @@ async fn edit_event(
         .bind(email)
         .fetch_one(&state.pool).await {
             Ok(updated_event_entry) => {
-                if let Err(e) = push_schemas::reschedule_reminders(&state.pool, id, updated_event_entry.start_datetime).await {
-                    log::error!("Events: Couldn't reschedule reminders for edited event_entry: {e}");
+                if previous_start != Some(updated_event_entry.start_datetime) {
+                    if let Err(e) = push_schemas::reschedule_reminders(&state.pool, id, updated_event_entry.start_datetime).await {
+                        log::error!("Events: Couldn't reschedule reminders for edited event_entry: {e}");
+                    }
                 }
                 log::info!("Events: Edited event_entry");
                 Ok(Json(updated_event_entry))

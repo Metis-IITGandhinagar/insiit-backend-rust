@@ -15,7 +15,7 @@ use crate::schemas::push_schemas::{self, PushJob};
 /// How often the worker looks for due notifications.
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 /// Notifications delivered per poll, so one backlog can't monopolise the pool.
-const BATCH_SIZE: i64 = 100;
+const BATCH_SIZE: i64 = 10;
 
 pub struct Notifier {
     client: reqwest::Client,
@@ -44,7 +44,10 @@ impl Notifier {
             }
         };
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .expect("Could not configure FCM HTTP client"),
             credentials,
             project_id,
         }
@@ -72,7 +75,8 @@ impl Notifier {
                 "message": {
                     "token": job.token,
                     "notification": { "title": job.title(), "body": job.body() },
-                    "data": { "event_id": job.event_id.to_string() }
+                    "data": { "event_id": job.event_id.to_string() },
+                    "android": { "notification": { "channel_id": "events_announcements" } }
                 }
             }))
             .send()

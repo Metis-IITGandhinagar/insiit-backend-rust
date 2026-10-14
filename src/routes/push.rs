@@ -2,7 +2,7 @@ use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
     response::Json as JsonResponse,
-    routing::{Router, delete, post},
+    routing::{Router, delete, post, put},
 };
 use axum_extra::{
     headers::Authorization, headers::authorization::Bearer, typed_header::TypedHeader,
@@ -10,7 +10,7 @@ use axum_extra::{
 
 use crate::AppState;
 use crate::auth::email_from_token;
-use crate::schemas::push_schemas::{self, DeviceRequest};
+use crate::schemas::push_schemas::{self, DeviceRequest, PreferenceRequest};
 
 /// Generous upper bounds; FCM registration tokens sit well under them.
 const MAX_DEVICE_ID_LENGTH: usize = 255;
@@ -20,6 +20,22 @@ pub fn get_routes() -> Router<AppState> {
     Router::new()
         .route("/push/devices", post(register_device))
         .route("/push/devices/{device_id}", delete(remove_device))
+        .route("/push/preferences", put(update_preferences))
+}
+
+async fn update_preferences(
+    State(state): State<AppState>,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(preferences): Json<PreferenceRequest>,
+) -> Result<JsonResponse<()>, (StatusCode, String)> {
+    let email = email_from_token(&state, auth_header.token().to_string()).await?;
+    push_schemas::set_reminder_preference(&state.pool, &email, preferences.reminders_enabled)
+        .await
+        .map_err(|error| {
+            log::error!("Push: Error updating preferences: {error}");
+            (StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update notification preferences"))
+        })?;
+    Ok(Json(()))
 }
 
 async fn register_device(
