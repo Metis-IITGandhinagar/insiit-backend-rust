@@ -33,7 +33,10 @@ async fn update_preferences(
         .await
         .map_err(|error| {
             log::error!("Push: Error updating preferences: {error}");
-            (StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update notification preferences"))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Couldn't update notification preferences"),
+            )
         })?;
     Ok(Json(()))
 }

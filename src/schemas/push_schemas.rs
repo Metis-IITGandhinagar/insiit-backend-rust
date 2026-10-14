@@ -15,7 +15,9 @@ pub struct DeviceRequest {
     pub reminders_enabled: bool,
 }
 
-fn default_reminders_enabled() -> bool { true }
+fn default_reminders_enabled() -> bool {
+    true
+}
 
 #[derive(Deserialize)]
 pub struct PreferenceRequest {
@@ -38,20 +40,26 @@ impl PushJob {
     pub fn title(&self) -> String {
         match self.kind.as_str() {
             "approved" => {
-                let date = self.start_datetime
-                    .format(&time::format_description::parse("[day] [month repr:long] [year]").unwrap())
+                let date = self
+                    .start_datetime
+                    .format(
+                        &time::format_description::parse("[day] [month repr:long] [year]").unwrap(),
+                    )
                     .unwrap_or_else(|_| self.start_datetime.date().to_string());
                 format!("{} — {date}", self.event_name)
             }
             _ => format!("{} — Starting Soon", self.event_name),
         }
     }
+}
 
-    pub fn body(&self) -> String {
-        match self.kind.as_str() {
-            "approved" => "Your event has been approved!".to_string(),
-            _ => format!("{} starts in 10 minutes. Tap to view the event.", self.event_name),
-        }
+pub fn body(&self) -> String {
+    match self.kind.as_str() {
+        "approved" => "Your event has been approved!".to_string(),
+        _ => format!(
+            "{} starts in 10 minutes. Tap to view the event.",
+            self.event_name
+        ),
     }
 }
 
@@ -172,7 +180,10 @@ pub async fn set_reminder_preference(
 ) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
     query("UPDATE push_devices SET reminders_enabled = $2 WHERE user_email = $1")
-        .bind(user_email).bind(enabled).execute(&mut *transaction).await?;
+        .bind(user_email)
+        .bind(enabled)
+        .execute(&mut *transaction)
+        .await?;
     if enabled {
         query("INSERT INTO event_push_jobs(event_id, user_email, device_id, kind, scheduled_at)
             SELECT event.id, device.user_email, device.device_id, 'reminder', event.start_datetime - $1
@@ -454,14 +465,23 @@ mod tests {
 
     #[tokio::test]
     async fn event_pushes_never_reach_unrelated_users() {
-        let Some(pool) = test_pool().await else { return; };
+        let Some(pool) = test_pool().await else {
+            return;
+        };
         register_device(&pool, "a@iit.in", &device("owner-phone", "owner-token"))
-            .await.unwrap();
+            .await
+            .unwrap();
         register_device(&pool, "b@iit.in", &device("other-phone", "other-token"))
-            .await.unwrap();
+            .await
+            .unwrap();
         let event_id = approved_event(&pool, 5).await;
-        enqueue_approval(&pool, event_id, OffsetDateTime::now_utc() + time::Duration::hours(5))
-            .await.unwrap();
+        enqueue_approval(
+            &pool,
+            event_id,
+            OffsetDateTime::now_utc() + time::Duration::hours(5),
+        )
+        .await
+        .unwrap();
         let due = due_jobs(&pool, 100).await.unwrap();
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].user_email, "a@iit.in");
@@ -470,16 +490,42 @@ mod tests {
 
     #[tokio::test]
     async fn reminder_preference_cancels_and_recreates_pending_jobs() {
-        let Some(pool) = test_pool().await else { return; };
+        let Some(pool) = test_pool().await else {
+            return;
+        };
         register_device(&pool, "a@iit.in", &device("owner-phone", "owner-token"))
-            .await.unwrap();
+            .await
+            .unwrap();
         let event_id = approved_event(&pool, 5).await;
-        enqueue_approval(&pool, event_id, OffsetDateTime::now_utc() + time::Duration::hours(5))
-            .await.unwrap();
-        set_reminder_preference(&pool, "a@iit.in", false).await.unwrap();
-        assert_eq!(count(&pool, "SELECT count(*) FROM event_push_jobs WHERE kind = 'reminder' AND sent_at IS NULL").await, 0);
-        set_reminder_preference(&pool, "a@iit.in", true).await.unwrap();
-        assert_eq!(count(&pool, "SELECT count(*) FROM event_push_jobs WHERE kind = 'reminder' AND sent_at IS NULL").await, 1);
+        enqueue_approval(
+            &pool,
+            event_id,
+            OffsetDateTime::now_utc() + time::Duration::hours(5),
+        )
+        .await
+        .unwrap();
+        set_reminder_preference(&pool, "a@iit.in", false)
+            .await
+            .unwrap();
+        assert_eq!(
+            count(
+                &pool,
+                "SELECT count(*) FROM event_push_jobs WHERE kind = 'reminder' AND sent_at IS NULL"
+            )
+            .await,
+            0
+        );
+        set_reminder_preference(&pool, "a@iit.in", true)
+            .await
+            .unwrap();
+        assert_eq!(
+            count(
+                &pool,
+                "SELECT count(*) FROM event_push_jobs WHERE kind = 'reminder' AND sent_at IS NULL"
+            )
+            .await,
+            1
+        );
     }
 
     #[tokio::test]
