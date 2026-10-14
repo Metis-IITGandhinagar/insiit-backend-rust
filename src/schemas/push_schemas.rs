@@ -40,26 +40,25 @@ impl PushJob {
     pub fn title(&self) -> String {
         match self.kind.as_str() {
             "approved" => {
+                let fmt = time::macros::format_description!("[day] [month repr:long] [year]");
                 let date = self
                     .start_datetime
-                    .format(
-                        &time::format_description::parse("[day] [month repr:long] [year]").unwrap(),
-                    )
+                    .format(&fmt)
                     .unwrap_or_else(|_| self.start_datetime.date().to_string());
                 format!("{} — {date}", self.event_name)
             }
             _ => format!("{} — Starting Soon", self.event_name),
         }
     }
-}
 
-pub fn body(&self) -> String {
-    match self.kind.as_str() {
-        "approved" => "Your event has been approved!".to_string(),
-        _ => format!(
-            "{} starts in 10 minutes. Tap to view the event.",
-            self.event_name
-        ),
+    pub fn body(&self) -> String {
+        match self.kind.as_str() {
+            "approved" => "Your event has been approved!".to_string(),
+            _ => format!(
+                "{} starts in 10 minutes. Tap to view the event.",
+                self.event_name
+            ),
+        }
     }
 }
 
