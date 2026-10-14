@@ -272,7 +272,7 @@ async fn edit_event(
         None
     };
 
-    let previous_start = query_as::<_, OffsetDateTime>(
+    let previous_start = query_as::<_, (OffsetDateTime,)>(
         "SELECT start_datetime FROM events WHERE id = $1 AND added_by_email = $2"
     )
     .bind(id)
@@ -282,7 +282,8 @@ async fn edit_event(
     .map_err(|e| {
         log::error!("Events: Couldn't read prior schedule: {e}");
         (StatusCode::INTERNAL_SERVER_ERROR, String::from("Couldn't update event"))
-    })?;
+    })?
+    .map(|(dt,)| dt);
 
     match query_as::<_, EventEntry>(
         "UPDATE events
