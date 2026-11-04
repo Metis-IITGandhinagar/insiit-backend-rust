@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "3700:3700"
+      - "${PORT:?PORT must be set in .env}:${PORT}"
     env_file:
       - .env
     volumes:
