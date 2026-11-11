@@ -54,6 +54,22 @@ impl Notifier {
     }
 
     async fn send(&self, job: &PushJob) -> Result<(), SendError> {
+        self.send_to(
+            &job.token,
+            &job.title(),
+            &job.body(),
+            json!({ "event_id": job.event_id.to_string() }),
+        )
+        .await
+    }
+
+    async fn send_to(
+        &self,
+        token: &str,
+        title: &str,
+        body: &str,
+        data: serde_json::Value,
+    ) -> Result<(), SendError> {
         let headers = match self.credentials.headers(Extensions::new()).await {
             // Without an entity tag the credentials always hand back fresh headers.
             Ok(CacheableResource::New { data, .. }) => data,
@@ -73,9 +89,9 @@ impl Notifier {
             .headers(headers)
             .json(&json!({
                 "message": {
-                    "token": job.token,
-                    "notification": { "title": job.title(), "body": job.body() },
-                    "data": { "event_id": job.event_id.to_string() },
+                    "token": token,
+                    "notification": { "title": title, "body": body },
+                    "data": data,
                     "android": { "notification": { "channel_id": "events_announcements" } }
                 }
             }))
@@ -103,8 +119,34 @@ pub async fn run_worker(pool: PgPool, notifier: Notifier) {
         if let Err(e) = deliver_due(&pool, &notifier).await {
             log::error!("Notifications: Couldn't deliver due notifications: {e}");
         }
+        if let Err(e) = deliver_cabshare_due(&pool, &notifier).await {
+            log::error!("Notifications: Couldn't deliver cabshare notifications: {e}");
+        }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+/// Cabshare's pushes: rides formed, co-riders joining, chat, reminders.
+async fn deliver_cabshare_due(pool: &PgPool, notifier: &Notifier) -> Result<(), sqlx::Error> {
+    for job in push_schemas::due_cabshare_jobs(pool, BATCH_SIZE).await? {
+        let data = json!({
+            "cabshare_request": job.request.map(|r| r.to_string()).unwrap_or_default(),
+        });
+        match notifier
+            .send_to(&job.token, &job.title, &job.body, data)
+            .await
+        {
+            Ok(()) => push_schemas::mark_cabshare_sent(pool, job.id).await?,
+            Err(SendError::UnknownDevice) => {
+                push_schemas::remove_device(pool, &job.user_email, &job.device_id).await?;
+            }
+            Err(SendError::Transient(e)) => {
+                log::warn!("Notifications: Cabshare delivery failed, will retry: {e}");
+                push_schemas::record_cabshare_failure(pool, job.id).await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn deliver_due(pool: &PgPool, notifier: &Notifier) -> Result<(), sqlx::Error> {

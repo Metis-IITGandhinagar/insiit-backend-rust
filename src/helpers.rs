@@ -42,6 +42,10 @@ pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     representatives_schemas::initialize_table(pool)
         .await
         .expect("Couldn't initialize representatives table");
+    // after push_schemas: cabshare's push jobs reference push_devices
+    crate::cabshare::schema::initialize_table(pool)
+        .await
+        .expect("Couldn't initialize cabshare tables");
     log::info!("Created all required tables");
     Ok(())
 }
