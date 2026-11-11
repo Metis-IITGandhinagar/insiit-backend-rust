@@ -700,3 +700,66 @@ mod tests {
         );
     }
 }
+
+/// One pending cabshare push, with the device token to send it to.
+#[derive(FromRow)]
+pub struct CabsharePushJob {
+    pub id: i64,
+    pub user_email: String,
+    pub device_id: String,
+    pub token: String,
+    pub title: String,
+    pub body: String,
+    pub request: Option<i64>,
+}
+
+/// Cabshare pushes that are due, claimed for five minutes so two workers never
+/// send one twice. A push older than an hour is dropped: "someone joined your
+/// ride" is noise once the ride has left.
+pub async fn due_cabshare_jobs(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<CabsharePushJob>, sqlx::Error> {
+    query("DELETE FROM cab_push_jobs WHERE sent_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'")
+        .execute(pool)
+        .await?;
+    query_as::<_, CabsharePushJob>(
+        "WITH due AS (
+            SELECT id FROM cab_push_jobs
+            WHERE sent_at IS NULL AND attempts < $1
+                AND (lease_until IS NULL OR lease_until < NOW())
+            ORDER BY created_at
+            LIMIT $2
+            FOR UPDATE SKIP LOCKED
+        ), claimed AS (
+            UPDATE cab_push_jobs job SET lease_until = NOW() + INTERVAL '5 minutes'
+            FROM due WHERE job.id = due.id
+            RETURNING job.*
+        )
+        SELECT job.id, job.user_email, job.device_id, device.token, job.title, job.body, job.request
+        FROM claimed job
+        JOIN push_devices device USING (user_email, device_id)
+        ORDER BY job.created_at;
+        ",
+    )
+    .bind(MAX_ATTEMPTS)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn mark_cabshare_sent(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
+    query("UPDATE cab_push_jobs SET sent_at = NOW(), lease_until = NULL WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn record_cabshare_failure(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
+    query("UPDATE cab_push_jobs SET attempts = attempts + 1, lease_until = NULL WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

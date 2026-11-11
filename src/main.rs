@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
 mod auth;
+mod cabshare;
 mod helpers;
 mod notifications;
 mod routes;
@@ -70,12 +71,15 @@ async fn main() {
     let notifier =
         notifications::Notifier::new(&firebase_app, env_vars.firebase_project_id.clone());
     tokio::spawn(notifications::run_worker(pool.clone(), notifier));
+    // Cabshare's clock: the final regroup, settling rides and reminders.
+    tokio::spawn(cabshare::routes::run_clock(pool.clone()));
     let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
     let announcement_routes = routes::announcements::get_routes();
     let bus_routes = routes::bus::get_routes();
     let buy_sell_routes = routes::buy_sell::get_routes();
+    let cabshare_routes = cabshare::routes::get_routes();
     let events_routes = routes::events::get_routes();
     let lost_found_routes = routes::lost_found::get_routes();
     let mess_routes = routes::mess::get_routes();
@@ -89,6 +93,7 @@ async fn main() {
         .merge(announcement_routes)
         .merge(bus_routes)
         .merge(buy_sell_routes)
+        .merge(cabshare_routes)
         .merge(events_routes)
         .merge(lost_found_routes)
         .merge(mess_routes)
