@@ -17,8 +17,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-use super::store::{self, Cx, Error, RideIn};
 use crate::AppState;
+use crate::schemas::cabshare_schemas::{self as store, Cx, Direction, Error, RideIn, Vehicle};
 
 type Out = Result<JsonResponse<Value>, (StatusCode, String)>;
 type Auth = TypedHeader<Authorization<Bearer>>;
@@ -146,7 +146,7 @@ async fn set_gender(State(state): State<AppState>, auth: Auth, Json(body): Json<
 
 #[derive(Deserialize)]
 struct FeedQuery {
-    direction: Option<String>,
+    direction: Option<Direction>,
     to: Option<String>,
     limit: Option<usize>,
     after: Option<String>,
@@ -156,7 +156,7 @@ async fn feed(State(state): State<AppState>, auth: Auth, Query(q): Query<FeedQue
     run!(state, auth, |cx, email| cx
         .feed(
             email,
-            q.direction.as_deref(),
+            q.direction,
             q.to.as_deref(),
             q.limit,
             q.after.as_deref()
@@ -167,13 +167,13 @@ async fn feed(State(state): State<AppState>, auth: Auth, Query(q): Query<FeedQue
 #[derive(Deserialize)]
 struct OpenQuery {
     destination: String,
-    direction: String,
+    direction: Direction,
     #[serde(default)]
-    handbags: i64,
+    handbags: i32,
     #[serde(default)]
-    suitcases: i64,
-    party: Option<i64>,
-    vehicle: Option<String>,
+    suitcases: i32,
+    party: Option<i32>,
+    vehicle: Option<Vehicle>,
 }
 
 async fn open_times(State(state): State<AppState>, auth: Auth, Query(q): Query<OpenQuery>) -> Out {
@@ -181,11 +181,11 @@ async fn open_times(State(state): State<AppState>, auth: Auth, Query(q): Query<O
         .open_times(
             email,
             &q.destination,
-            &q.direction,
+            q.direction,
             q.handbags,
             q.suitcases,
             q.party.unwrap_or(1),
-            q.vehicle.as_deref().unwrap_or("cab")
+            q.vehicle.unwrap_or_default()
         )
         .await)
 }
@@ -225,18 +225,18 @@ async fn clear_history(State(state): State<AppState>, auth: Auth) -> Out {
         .map(|n| json!({"cleared": n})))
 }
 
-async fn card(State(state): State<AppState>, auth: Auth, Path(id): Path<i64>) -> Out {
+async fn card(State(state): State<AppState>, auth: Auth, Path(id): Path<i32>) -> Out {
     run!(state, auth, |cx, email| cx.card(email, id).await)
 }
 
-async fn cancel(State(state): State<AppState>, auth: Auth, Path(id): Path<i64>) -> Out {
+async fn cancel(State(state): State<AppState>, auth: Auth, Path(id): Path<i32>) -> Out {
     run!(state, auth, |cx, email| cx
         .cancel(email, id)
         .await
         .map(|_| json!({"status": "cancelled"})))
 }
 
-async fn dismiss(State(state): State<AppState>, auth: Auth, Path(id): Path<i64>) -> Out {
+async fn dismiss(State(state): State<AppState>, auth: Auth, Path(id): Path<i32>) -> Out {
     run!(state, auth, |cx, email| cx
         .dismiss_notice(email, id)
         .await
@@ -251,7 +251,7 @@ struct QuoteIn {
 async fn set_quote(
     State(state): State<AppState>,
     auth: Auth,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Json(body): Json<QuoteIn>,
 ) -> Out {
     run!(state, auth, |cx, email| async {
@@ -270,7 +270,7 @@ struct ChatQuery {
 async fn messages(
     State(state): State<AppState>,
     auth: Auth,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Query(q): Query<ChatQuery>,
 ) -> Out {
     run!(state, auth, |cx, email| cx
@@ -286,7 +286,7 @@ struct MessageIn {
 async fn send_message(
     State(state): State<AppState>,
     auth: Auth,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Json(body): Json<MessageIn>,
 ) -> Out {
     run!(state, auth, |cx, email| async {
@@ -305,7 +305,7 @@ struct WhereIn {
 async fn check_in(
     State(state): State<AppState>,
     auth: Auth,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Json(body): Json<WhereIn>,
 ) -> Out {
     run!(state, auth, |cx, email| async {
@@ -315,7 +315,7 @@ async fn check_in(
     .await)
 }
 
-async fn confirm(State(state): State<AppState>, auth: Auth, Path(id): Path<i64>) -> Out {
+async fn confirm(State(state): State<AppState>, auth: Auth, Path(id): Path<i32>) -> Out {
     run!(state, auth, |cx, email| async {
         cx.confirm_ride(email, id).await?;
         cx.card(email, id).await
@@ -331,7 +331,7 @@ struct ReportIn {
 async fn report(
     State(state): State<AppState>,
     auth: Auth,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Json(body): Json<ReportIn>,
 ) -> Out {
     run!(state, auth, |cx, email| async {
@@ -389,7 +389,7 @@ async fn notifications(
 
 #[derive(Deserialize)]
 struct ReadIn {
-    ids: Option<Vec<i64>>,
+    ids: Option<Vec<i32>>,
 }
 
 async fn read_notifications(

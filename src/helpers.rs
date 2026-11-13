@@ -4,6 +4,7 @@ use crate::schemas::admin_schemas;
 use crate::schemas::announcements_schemas;
 use crate::schemas::bus_schemas;
 use crate::schemas::buy_sell_schemas;
+use crate::schemas::cabshare_schemas;
 use crate::schemas::events_schemas;
 use crate::schemas::lost_found_schemas;
 use crate::schemas::mess_schemas;
@@ -43,7 +44,7 @@ pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
         .await
         .expect("Couldn't initialize representatives table");
     // after push_schemas: cabshare's push jobs reference push_devices
-    crate::cabshare::schema::initialize_table(pool)
+    cabshare_schemas::initialize_table(pool)
         .await
         .expect("Couldn't initialize cabshare tables");
     log::info!("Created all required tables");

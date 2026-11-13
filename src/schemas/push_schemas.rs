@@ -704,13 +704,13 @@ mod tests {
 /// One pending cabshare push, with the device token to send it to.
 #[derive(FromRow)]
 pub struct CabsharePushJob {
-    pub id: i64,
+    pub id: i32,
     pub user_email: String,
     pub device_id: String,
     pub token: String,
     pub title: String,
     pub body: String,
-    pub request: Option<i64>,
+    pub request: Option<i32>,
 }
 
 /// Cabshare pushes that are due, claimed for five minutes so two workers never
@@ -748,7 +748,7 @@ pub async fn due_cabshare_jobs(
     .await
 }
 
-pub async fn mark_cabshare_sent(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
+pub async fn mark_cabshare_sent(pool: &PgPool, id: i32) -> Result<(), sqlx::Error> {
     query("UPDATE cab_push_jobs SET sent_at = NOW(), lease_until = NULL WHERE id = $1")
         .bind(id)
         .execute(pool)
@@ -756,7 +756,7 @@ pub async fn mark_cabshare_sent(pool: &PgPool, id: i64) -> Result<(), sqlx::Erro
     Ok(())
 }
 
-pub async fn record_cabshare_failure(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
+pub async fn record_cabshare_failure(pool: &PgPool, id: i32) -> Result<(), sqlx::Error> {
     query("UPDATE cab_push_jobs SET attempts = attempts + 1, lease_until = NULL WHERE id = $1")
         .bind(id)
         .execute(pool)
