@@ -28,7 +28,9 @@ use sqlx::{PgPool, Postgres, Row, Transaction, query};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use sqlx::Type;
 
 use credibility as cred;
@@ -144,6 +146,7 @@ const TABLES: &[&str] = &[
         quote BIGINT,
         place_note TEXT,
         cleared BOOLEAN NOT NULL DEFAULT FALSE,
+        seated_at BIGINT,
         created BIGINT NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS cab_requests_email ON cab_requests (email)",
@@ -168,6 +171,7 @@ const TABLES: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS cab_reports (
         cab_id INTEGER NOT NULL,
         reporter TEXT NOT NULL,
+        reporter_email VARCHAR(255) NOT NULL,
         accused TEXT NOT NULL,
         created BIGINT NOT NULL,
         PRIMARY KEY (cab_id, reporter, accused)
@@ -245,6 +249,9 @@ pub const FREE_CANCEL_BEFORE: i64 = 2 * 60 * 60;
 pub const MAX_AHEAD: i64 = 30 * 24 * 60 * 60;
 pub const MAX_SLOTS: usize = 12;
 pub const SETTLE_AFTER: i64 = 2 * 60 * 60;
+/// One student's trips are at least this far apart: a ride from campus takes
+/// up to about an hour, so two trips closer than this are one person in two cabs.
+pub const BUSY_GAP: i64 = 60 * 60;
 pub const MESSAGE_MAX: usize = 500;
 pub const NOTE_MAX: usize = 60;
 pub const BLOCK_MAX: i64 = 100;
@@ -318,6 +325,14 @@ pub fn parse_time(v: &Value) -> Option<i64> {
 }
 
 /// "18:30" in India time, for notification text.
+/// `relay-` and the first 10 hex digits of HMAC-SHA256(secret, "cab:<id>").
+fn relay(secret: &str, cab_id: i32) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC takes any key");
+    mac.update(format!("cab:{cab_id}").as_bytes());
+    let digest = hex::encode(mac.finalize().into_bytes());
+    format!("relay-{}@share.iitgn", &digest[..10])
+}
+
 fn clock(t: i64) -> String {
     let d = OffsetDateTime::from_unix_timestamp(t + 19_800).unwrap_or(OffsetDateTime::UNIX_EPOCH);
     format!("{:02}:{:02}", d.hour(), d.minute())
@@ -493,6 +508,11 @@ fn shape(input: &RideIn) -> R<(i32, Vehicle, i32, i32)> {
     Ok((party, vehicle, handbags, suitcases))
 }
 
+/// Is `departure` within `BUSY_GAP` of a time this student already holds?
+fn near_busy(busy: &HashSet<i64>, departure: i64) -> bool {
+    busy.iter().any(|b| (departure - b).abs() < BUSY_GAP)
+}
+
 fn place_check(destination: &str, direction: Direction) -> R<()> {
     if !places::is_stop(destination) {
         return bad(format!("unknown destination: {destination}"));
@@ -593,20 +613,24 @@ impl Cx {
         Ok(())
     }
 
-    async fn handle(&mut self, email: &str) -> R<String> {
+    /// This rider's relay handle in one cab. Each cab gets its own, worked
+    /// out from a random secret kept on the account (never shown) and the
+    /// cab's id, so a co-rider who saw a name beside a handle at one reveal
+    /// cannot recognise that student in a later ride before its reveal.
+    async fn handle(&mut self, email: &str, cab_id: i32) -> R<String> {
         let row = self
             .one(sqlx::query("SELECT handle FROM cab_users WHERE email=$1").bind(email))
             .await?;
         match row {
-            Some(r) => Ok(r.get("handle")),
+            Some(r) => Ok(relay(&r.get::<String, _>("handle"), cab_id)),
             None => {
                 self.sign_in(email, "").await?;
-                Box::pin(self.handle(email)).await
+                Box::pin(self.handle(email, cab_id)).await
             }
         }
     }
 
-    async fn handles(&mut self, emails: &[String]) -> R<HashMap<String, String>> {
+    async fn handles(&mut self, emails: &[String], cab_id: i32) -> R<HashMap<String, String>> {
         let rows = self
             .all(
                 sqlx::query("SELECT email, handle FROM cab_users WHERE email = ANY($1)")
@@ -615,7 +639,7 @@ impl Cx {
             .await?;
         Ok(rows
             .iter()
-            .map(|r| (r.get("email"), r.get("handle")))
+            .map(|r| (r.get("email"), relay(&r.get::<String, _>("handle"), cab_id)))
             .collect())
     }
 
@@ -788,6 +812,16 @@ impl Cx {
             }
         }
         Ok(out)
+    }
+
+    /// Whoever blocked this student. They never learn who.
+    async fn blocked_by(&mut self, email: &str) -> R<HashSet<String>> {
+        Ok(self
+            .all(sqlx::query("SELECT blocker FROM cab_blocks WHERE blocked=$1").bind(email))
+            .await?
+            .iter()
+            .map(|r| r.get(0))
+            .collect())
     }
 
     async fn avoid(&mut self, email: &str) -> R<HashSet<String>> {
@@ -1018,6 +1052,11 @@ impl Cx {
         if slots.iter().any(|s| busy.contains(s)) {
             return bad("you already have a trip at that time; cancel it or pick another time");
         }
+        if slots.iter().any(|&s| near_busy(&busy, s)) {
+            return bad(
+                "you already have a trip within an hour of that time; cancel it or pick another time",
+            );
+        }
         Ok(())
     }
 
@@ -1140,13 +1179,17 @@ impl Cx {
         party: i32,
         vehicle: Vehicle,
     ) -> R<String> {
-        if self.busy_times(email).await?.contains(&departure) {
+        let busy = self.busy_times(email).await?;
+        if busy.contains(&departure) {
             return Ok("You already have a trip at that time. Open it in My trips, or cancel it to join this one.".into());
+        }
+        if near_busy(&busy, departure) {
+            return Ok("You already have a trip within an hour of that time. Open it in My trips, or cancel it to join this one.".into());
         }
         if departure - self.now <= REVEAL_BEFORE {
             return Ok("That ride leaves in under 15 minutes, so its group is fixed.".into());
         }
-        let avoid = self.avoid(email).await?;
+        let against = self.blocked_by(email).await?; // never this student's own blocks
         let ids: Vec<i32> = self
             .all(
                 sqlx::query(
@@ -1171,7 +1214,7 @@ impl Cx {
                 others.push(vec![w]);
             }
         }
-        others.retain(|m| !m.iter().any(|x| avoid.contains(&x.email)));
+        others.retain(|m| !m.iter().any(|x| against.contains(&x.email)));
         if others.is_empty() {
             return Ok("Nobody is going at that time any more. Pick another time.".into());
         }
@@ -1213,9 +1256,12 @@ impl Cx {
     async fn seat(&mut self, rid: i32, cab_id: i32, announce: bool) -> R<()> {
         // posting or joining a time already says "I am going then": no Accept step
         self.exec(
-            sqlx::query("UPDATE cab_requests SET state='grouped', cab_id=$1 WHERE id=$2")
-                .bind(cab_id)
-                .bind(rid),
+            sqlx::query(
+                "UPDATE cab_requests SET state='grouped', cab_id=$1, seated_at=$2 WHERE id=$3",
+            )
+            .bind(cab_id)
+            .bind(self.now)
+            .bind(rid),
         )
         .await?;
         let (dest, _, departure, _) = self.cab(cab_id).await?.unwrap();
@@ -1352,6 +1398,11 @@ impl Cx {
             "displaced" => (
                 "You’re back to waiting",
                 "We’ll group you again at one of your times.",
+            ),
+            // nobody cancelled: the final groups had no seat for them
+            "regrouped_out" => (
+                "Final groups are set",
+                "The final groups at 15 minutes to go had no seat for you, so your trip is back to waiting.",
             ),
             _ => ("Your ride changed", "Open it to see what changed."),
         };
@@ -1542,7 +1593,11 @@ impl Cx {
         destination: Option<&str>,
         loaded: &(Vec<(i64, Vec<Req>)>, Vec<Req>),
     ) -> R<Vec<(i64, Vec<Req>, String)>> {
-        let avoid = self.avoid(email).await?;
+        // Only a block made against this student closes a ride to them here.
+        // Their own blocks never change what they see: otherwise blocking and
+        // unblocking someone and comparing the feed shows which ride is
+        // theirs. Seating (`place`) still never puts the two together.
+        let against = self.blocked_by(email).await?;
         let (cabs, waiting) = loaded;
         let mut rides: Vec<(i64, Vec<Req>)> = Vec::new();
         for (d, members) in cabs {
@@ -1576,10 +1631,20 @@ impl Cx {
                 party,
                 vehicle,
                 email: email.into(),
-                avoid: avoid.clone(),
+                avoid: against.clone(),
                 ..Default::default()
             };
-            if matching::fits(&with(&members, &me)) {
+            let seen: Vec<Req> = members
+                .iter()
+                .map(|m| {
+                    let mut m = m.clone();
+                    if !against.contains(&m.email) {
+                        m.avoid.remove(email);
+                    }
+                    m
+                })
+                .collect();
+            if matching::fits(&with(&seen, &me)) {
                 out.push((d, members, stop));
             }
         }
@@ -1760,7 +1825,7 @@ impl Cx {
                             .map(|m| m.destination.as_str())
                             .chain([stop.as_str()]),
                     );
-                    if !busy.contains(&d) {
+                    if !near_busy(&busy, d) {
                         found.entry((d, fin)).or_insert((members, stop));
                     }
                 }
@@ -1844,7 +1909,7 @@ impl Cx {
             ));
         }
         let cab = row.cab_id.unwrap();
-        let handle = self.handle(email).await?;
+        let handle = self.handle(email, cab).await?;
         self.exec(
             sqlx::query(
                 "INSERT INTO cab_messages(cab_id, sender, body, created) VALUES ($1,$2,$3,$4)",
@@ -1895,22 +1960,30 @@ impl Cx {
             }
             None => (i64::MAX, i64::MAX),
         };
+        // only what was written while this rider was in the cab: a newcomer,
+        // or a rider the final regroup moved, never reads what was said before
+        let since: i64 = self
+            .one(sqlx::query("SELECT seated_at FROM cab_requests WHERE id=$1").bind(rid))
+            .await?
+            .and_then(|r| r.get::<Option<i64>, _>(0))
+            .unwrap_or(i64::MIN);
         let mut rows = self
             .all(
                 sqlx::query(
-                    "SELECT id, sender, body, created FROM cab_messages WHERE cab_id=$1
+                    "SELECT id, sender, body, created FROM cab_messages WHERE cab_id=$1 AND created>=$5
                      AND (created<$2 OR (created=$2 AND id<$3)) ORDER BY created DESC, id DESC LIMIT $4",
                 )
                 .bind(cab)
                 .bind(at)
                 .bind(mid)
-                .bind(limit + 1),
+                .bind(limit + 1)
+                .bind(since),
             )
             .await?;
         let more = rows.len() as i64 > limit;
         rows.truncate(limit as usize);
         rows.reverse();
-        let mine = self.handle(email).await?;
+        let mine = self.handle(email, cab).await?;
         let older = if more {
             rows.first()
                 .map(|r| format!("{}~{}", r.get::<i64, _>("created"), r.get::<i32, _>("id")))
@@ -1924,6 +1997,7 @@ impl Cx {
                        "body": m.get::<String, _>("body"), "at": iso(m.get("created"))})
             }).collect::<Vec<_>>(),
             "older": older,
+            "trip": cab,
         }))
     }
 
@@ -1931,6 +2005,16 @@ impl Cx {
 
     async fn departed(&mut self, cab_id: i32) -> R<bool> {
         Ok(self.cab(cab_id).await?.is_some_and(|c| self.now >= c.2))
+    }
+
+    /// Confirming and reporting end when the ride settles, two hours after
+    /// departure: answering "confirmed" then, while changing nothing, misleads.
+    async fn refuse_once_settled(&mut self, cab_id: i32) -> R<()> {
+        let (_, _, departure, settled) = self.cab(cab_id).await?.unwrap();
+        if settled || self.now >= departure + SETTLE_AFTER {
+            return bad("this ride has been settled; it can no longer change");
+        }
+        Ok(())
     }
 
     pub async fn confirm_ride(&mut self, email: &str, rid: i32) -> R<()> {
@@ -1941,6 +2025,7 @@ impl Cx {
         if !self.departed(row.cab_id.unwrap()).await? {
             return bad("the cab has not left yet");
         }
+        self.refuse_once_settled(row.cab_id.unwrap()).await?;
         self.exec(sqlx::query("UPDATE cab_requests SET rode=TRUE WHERE id=$1").bind(rid))
             .await?;
         Ok(())
@@ -2016,10 +2101,11 @@ impl Cx {
         if !self.departed(cab).await? {
             return bad("the cab has not left yet");
         }
+        self.refuse_once_settled(cab).await?;
         let members = self.member_rows(cab).await?;
         let emails: Vec<String> = members.iter().map(|m| m.1.clone()).collect();
-        let handles = self.handles(&emails).await?;
-        let mine = self.handle(email).await?;
+        let handles = self.handles(&emails, cab).await?;
+        let mine = self.handle(email, cab).await?;
         if handle == mine {
             return bad("you cannot report yourself");
         }
@@ -2033,9 +2119,10 @@ impl Cx {
             return bad("they checked in at the pickup point");
         }
         self.exec(
-            sqlx::query("INSERT INTO cab_reports(cab_id, reporter, accused, created) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING")
+            sqlx::query("INSERT INTO cab_reports(cab_id, reporter, reporter_email, accused, created) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
                 .bind(cab)
                 .bind(mine)
+                .bind(email)
                 .bind(handle)
                 .bind(self.now),
         )
@@ -2043,11 +2130,13 @@ impl Cx {
         Ok(())
     }
 
-    async fn report_counts(&mut self, reporter: &str, created: i64) -> R<bool> {
+    /// A report counts unless its reporter (an account: a handle is per cab)
+    /// already made `REPORT_CAP` reports in the window before it.
+    async fn report_counts(&mut self, reporter_email: &str, created: i64) -> R<bool> {
         let n: i64 = self
             .one(
-                sqlx::query("SELECT COUNT(*) AS n FROM cab_reports WHERE reporter=$1 AND created<$2 AND created>=$3")
-                    .bind(reporter)
+                sqlx::query("SELECT COUNT(*) AS n FROM cab_reports WHERE reporter_email=$1 AND created<$2 AND created>=$3")
+                    .bind(reporter_email)
                     .bind(created)
                     .bind(created - cred::REPORT_WINDOW),
             )
@@ -2075,20 +2164,20 @@ impl Cx {
         let mut reporters: HashMap<String, HashSet<String>> = HashMap::new();
         for r in self
             .all(
-                sqlx::query("SELECT reporter, accused, created FROM cab_reports WHERE cab_id=$1")
+                sqlx::query("SELECT reporter, reporter_email, accused, created FROM cab_reports WHERE cab_id=$1")
                     .bind(cab_id),
             )
             .await?
         {
-            let (reporter, accused, created): (String, String, i64) =
-                (r.get(0), r.get(1), r.get(2));
-            if self.report_counts(&reporter, created).await? {
+            let (reporter, reporter_email, accused, created): (String, String, String, i64) =
+                (r.get(0), r.get(1), r.get(2), r.get(3));
+            if self.report_counts(&reporter_email, created).await? {
                 reporters.entry(accused).or_default().insert(reporter);
             }
         }
         for (rid, email) in members {
             let row = self.row(rid).await?;
-            let handle = self.handle(&email).await?;
+            let handle = self.handle(&email, cab_id).await?;
             let score = self.score(&email).await?;
             let penalised = row.checked_in.is_none()
                 && need > 0
@@ -2211,7 +2300,18 @@ impl Cx {
             }
         }
         let before: HashMap<i32, i32> = seated.iter().map(|m| (m.id, m.cab_id.unwrap())).collect();
-        let (mut groups, _) = matching::regroup(riders.clone());
+        // the vehicles as they stand are a floor: never seat fewer people
+        let current: Vec<Vec<Req>> = cab_ids
+            .iter()
+            .map(|c| {
+                riders
+                    .iter()
+                    .filter(|r| r.cab_id == Some(*c) && r.is_grouped())
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        let (mut groups, _) = matching::regroup(riders.clone(), &current);
         groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
         let mut free = cab_ids.clone();
         let mut placed: HashMap<i32, i32> = HashMap::new();
@@ -2246,16 +2346,23 @@ impl Cx {
             match (placed.get(&r.id), before.get(&r.id)) {
                 (None, Some(_)) => {
                     self.unseat(r.id).await?;
-                    self.tell(r.id, "partner_left").await?;
+                    self.tell(r.id, "regrouped_out").await?;
                 }
                 (None, None) => {}
                 (Some(&cab), Some(&was)) => {
-                    self.exec(
-                        sqlx::query("UPDATE cab_requests SET cab_id=$1 WHERE id=$2")
+                    if cab != was {
+                        // a different vehicle: what was said in it before was
+                        // said to other people, so the chat starts from now
+                        self.exec(
+                            sqlx::query(
+                                "UPDATE cab_requests SET cab_id=$1, seated_at=$2 WHERE id=$3",
+                            )
                             .bind(cab)
+                            .bind(self.now)
                             .bind(r.id),
-                    )
-                    .await?;
+                        )
+                        .await?;
+                    }
                     let mates: HashSet<i32> = placed
                         .iter()
                         .filter(|(_, c)| **c == cab)
@@ -2456,8 +2563,9 @@ impl Cx {
         let rows: Vec<(i64, String)> = self
             .all(
                 sqlx::query(
-                    "SELECT quote, destination FROM cab_requests WHERE quote IS NOT NULL AND vehicle=$1 AND created>=$2
-                     ORDER BY id DESC LIMIT 200",
+                    "SELECT DISTINCT ON (email) quote, destination FROM cab_requests
+                     WHERE quote IS NOT NULL AND state<>'cancelled' AND vehicle=$1 AND created>=$2
+                     ORDER BY email, id DESC",
                 )
                 .bind(vehicle)
                 .bind(self.now - QUOTE_WINDOW),
@@ -2649,8 +2757,8 @@ impl Cx {
         let departed = self.now >= trip.departure;
         let revealed = self.fixed(trip.departure);
         let emails: Vec<String> = trip.members.iter().map(|m| m.email.clone()).collect();
-        let handles = self.handles(&emails).await?;
-        let mine_handle = self.handle(email).await?;
+        let handles = self.handles(&emails, trip.id).await?;
+        let mine_handle = self.handle(email, trip.id).await?;
         let reported: HashSet<String> = if departed {
             self.all(
                 sqlx::query("SELECT accused FROM cab_reports WHERE cab_id=$1 AND reporter=$2")
@@ -2857,7 +2965,7 @@ impl Cx {
             // many messages in one ride are one notification, not many
             let old = self
                 .one(
-                    sqlx::query("SELECT id, times FROM cab_notifications WHERE email=$1 AND kind='message' AND trip=$2 AND NOT read")
+                    sqlx::query("SELECT id, times, request FROM cab_notifications WHERE email=$1 AND kind='message' AND trip=$2 AND NOT read")
                         .bind(email)
                         .bind(t),
                 )
@@ -2865,13 +2973,25 @@ impl Cx {
             if let Some(o) = old {
                 let n = o.get::<i32, _>("times") + 1;
                 let where_ = self.where_(t).await?;
+                // a new row, not an update: pages are cut by id, so an old id
+                // with a new time showed twice across pages
                 self.exec(
-                    sqlx::query("UPDATE cab_notifications SET title=$1, body=$2, created=$3, times=$4 WHERE id=$5")
-                        .bind(format!("{n} new messages · {where_} ride"))
-                        .bind(&body)
-                        .bind(self.now)
-                        .bind(n)
+                    sqlx::query("DELETE FROM cab_notifications WHERE id=$1")
                         .bind(o.get::<i32, _>("id")),
+                )
+                .await?;
+                self.exec(
+                    sqlx::query(
+                        "INSERT INTO cab_notifications(email, kind, title, body, trip, request, created, times)
+                         VALUES ($1, 'message', $2, $3, $4, $5, $6, $7)",
+                    )
+                    .bind(email)
+                    .bind(format!("{n} new messages · {where_} ride"))
+                    .bind(&body)
+                    .bind(t)
+                    .bind(o.get::<Option<i32>, _>("request"))
+                    .bind(self.now)
+                    .bind(n),
                 )
                 .await?;
                 return Ok(());
@@ -3576,19 +3696,135 @@ pub mod matching {
         cab.iter().map(|r| r.score).sum::<f64>() / cab.len() as f64
     }
 
+    /// Riders at one time searched exhaustively at the freeze.
+    pub const EXACT_LIMIT: usize = 10;
+
     /// The final groups for everyone leaving at one time, run once at the freeze.
     ///
-    /// 1. Seat as many riders as possible: nobody is left out for their score
-    ///    while a vehicle has room.
-    /// 2. Riders with similar scores ride together: highest score down, filling
-    ///    one vehicle at a time.
+    /// Aims, in order:
+    /// 1. Seat as many people as possible: nobody is left out for their score
+    ///    while there is room.
+    /// 2. Use as few vehicles as that allows, so each fare is shared widely.
+    /// 3. Riders with similar scores ride together: the smallest total spread
+    ///    (highest minus lowest score in each vehicle).
     ///
-    /// A vehicle of one is not a group: a lone rider moves into a vehicle with
-    /// room, or swaps with the member of the nearest-scored vehicle who rides best
-    /// with them, so that vehicle still has two.
+    /// A vehicle of one is not a group. Up to `EXACT_LIMIT` riders every
+    /// arrangement is searched; above that a greedy fill is used. `current`,
+    /// the groups as they stand, is a floor either way: the regroup never
+    /// seats fewer people than are seated already.
     ///
     /// Returns (groups, unmatched).
-    pub fn regroup(reqs: Vec<Req>) -> (Vec<Vec<Req>>, Vec<Req>) {
+    pub fn regroup(reqs: Vec<Req>, current: &[Vec<Req>]) -> (Vec<Vec<Req>>, Vec<Req>) {
+        let mut groups = if reqs.len() <= EXACT_LIMIT {
+            best(&reqs)
+        } else {
+            greedy(reqs.clone())
+        };
+        let floor: Vec<Vec<Req>> = current
+            .iter()
+            .filter(|g| {
+                g.len() >= 2 && g.iter().all(|r| reqs.iter().any(|x| x.id == r.id)) && fits(g)
+            })
+            .cloned()
+            .collect();
+        if people_seated(&floor) > people_seated(&groups) {
+            groups = floor;
+        }
+        let seated: HashSet<i32> = groups.iter().flatten().map(|r| r.id).collect();
+        let unmatched = reqs
+            .into_iter()
+            .filter(|r| !seated.contains(&r.id))
+            .collect();
+        (groups, unmatched)
+    }
+
+    fn people_seated(groups: &[Vec<Req>]) -> i32 {
+        groups
+            .iter()
+            .filter(|g| g.len() >= 2)
+            .map(|g| people(g))
+            .sum()
+    }
+
+    fn spread(group: &[Req]) -> f64 {
+        let hi = group.iter().map(|r| r.score).fold(f64::MIN, f64::max);
+        let lo = group.iter().map(|r| r.score).fold(f64::MAX, f64::min);
+        hi - lo
+    }
+
+    /// (people left out, vehicles, total spread): lower is better.
+    type Key = (i32, usize, f64);
+
+    fn better(a: Key, b: Key) -> bool {
+        a.0.cmp(&b.0)
+            .then(a.1.cmp(&b.1))
+            .then(a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+            .is_lt()
+    }
+
+    fn key_of(groups: &[Vec<Req>], seatable: i32) -> Key {
+        let cabs: Vec<&Vec<Req>> = groups.iter().filter(|g| g.len() >= 2).collect();
+        (-seatable, cabs.len(), cabs.iter().map(|g| spread(g)).sum())
+    }
+
+    /// Every arrangement, best first by (most people seated, fewest vehicles,
+    /// smallest total spread). Riders are taken in credibility order and the
+    /// first arrangement found wins a tie, so ties keep the most credible
+    /// together.
+    fn best(reqs: &[Req]) -> Vec<Vec<Req>> {
+        let order = by_credibility(reqs.to_vec());
+        let mut left = vec![0; order.len() + 1]; // people from rider i onwards
+        for i in (0..order.len()).rev() {
+            left[i] = left[i + 1] + order[i].party;
+        }
+        let mut found: Option<(Key, Vec<Vec<Req>>)> = None;
+        let mut groups: Vec<Vec<Req>> = Vec::new();
+        walk(0, &order, &left, &mut groups, &mut found);
+        found.map(|f| f.1).unwrap_or_default()
+    }
+
+    fn walk(
+        i: usize,
+        order: &[Req],
+        left: &[i32],
+        groups: &mut Vec<Vec<Req>>,
+        found: &mut Option<(Key, Vec<Vec<Req>>)>,
+    ) {
+        if let Some((k, _)) = found {
+            // nothing below here beats the best so far: it seats at most
+            // `most`, and vehicles and spread only grow as riders are added
+            let most = groups.iter().map(|g| people(g)).sum::<i32>() + left[i];
+            let seated = people_seated(groups);
+            let bound = key_of(groups, seated.max(0));
+            if !better((-most, bound.1, bound.2), *k) {
+                return;
+            }
+        }
+        if i == order.len() {
+            let k = key_of(groups, people_seated(groups));
+            if found.as_ref().is_none_or(|(b, _)| better(k, *b)) {
+                let cabs = groups.iter().filter(|g| g.len() >= 2).cloned().collect();
+                *found = Some((k, cabs));
+            }
+            return;
+        }
+        let r = &order[i];
+        for g in 0..groups.len() {
+            if fits(&with(&groups[g], r)) {
+                groups[g].push(r.clone());
+                walk(i + 1, order, left, groups, found);
+                groups[g].pop();
+            }
+        }
+        groups.push(vec![r.clone()]);
+        walk(i + 1, order, left, groups, found);
+        groups.pop();
+    }
+
+    /// The fill used for large sets: highest score first, one vehicle at a
+    /// time; a rider who would be alone joins a vehicle with room, or takes
+    /// the seat of the closest-scored member of a vehicle of three or more.
+    fn greedy(reqs: Vec<Req>) -> Vec<Vec<Req>> {
         let mut cabs: Vec<Vec<Req>> = Vec::new();
         for r in by_credibility(reqs) {
             match cabs.iter_mut().find(|c| fits(&with(c, &r))) {
@@ -3601,7 +3837,6 @@ pub mod matching {
             .filter(|c| c.len() == 1)
             .map(|c| c[0].clone())
             .collect();
-        let mut unmatched = Vec::new();
         for lone in lonely {
             cabs.retain(|c| !(c.len() == 1 && c[0].id == lone.id));
             let mut order: Vec<usize> = (0..cabs.len()).collect();
@@ -3635,19 +3870,13 @@ pub mod matching {
                     }
                 }
             }
-            match swap {
-                Some((i, mid)) => {
-                    let pos = cabs[i].iter().position(|x| x.id == mid).unwrap();
-                    let m = cabs[i].remove(pos);
-                    cabs.push(vec![m, lone]);
-                }
-                None => unmatched.push(lone),
+            if let Some((i, mid)) = swap {
+                let pos = cabs[i].iter().position(|x| x.id == mid).unwrap();
+                let m = cabs[i].remove(pos);
+                cabs.push(vec![m, lone]);
             }
         }
-        (
-            cabs.into_iter().filter(|c| c.len() >= 2).collect(),
-            unmatched,
-        )
+        cabs.into_iter().filter(|c| c.len() >= 2).collect()
     }
 
     #[cfg(test)]
@@ -3714,10 +3943,50 @@ pub mod matching {
                 .enumerate()
                 .map(|(i, s)| req(i as i32 + 1, "airport", *s))
                 .collect();
-            let (groups, unmatched) = regroup(reqs);
+            let (groups, unmatched) = regroup(reqs, &[]);
             assert!(unmatched.is_empty());
             assert_eq!(groups.iter().map(|g| g.len()).sum::<usize>(), 7);
             assert!(groups[0].iter().all(|r| r.score >= 80.0));
+        }
+
+        #[test]
+        fn the_freeze_never_seats_fewer_people_than_are_seated() {
+            // the 14 Nov review's case: greedy filling dropped one of five
+            let mk = |id, score, dest, bags, cases| {
+                let mut r = req(id, dest, score);
+                r.handbags = bags;
+                r.suitcases = cases;
+                r
+            };
+            let a = mk(1, 90.0, "rakshashakti", 1, 1);
+            let b = mk(2, 70.0, "rakshashakti", 0, 1);
+            let c = mk(3, 80.0, "airport", 2, 0);
+            let d = mk(4, 60.0, "kudasan", 0, 1);
+            let e = mk(5, 100.0, "kudasan", 0, 2);
+            let current = vec![
+                vec![a.clone(), b.clone(), c.clone()],
+                vec![d.clone(), e.clone()],
+            ];
+            let (groups, unmatched) = regroup(vec![a, b, c, d, e], &current);
+            assert!(unmatched.is_empty(), "{unmatched:?}");
+            assert_eq!(groups.iter().map(|g| g.len()).sum::<usize>(), 5);
+        }
+
+        #[test]
+        fn six_riders_split_by_score_with_no_spread() {
+            let reqs: Vec<Req> = [0.0, 100.0, 0.0, 100.0, 0.0, 100.0]
+                .iter()
+                .enumerate()
+                .map(|(i, s)| req(i as i32 + 1, "kudasan", *s))
+                .collect();
+            let (groups, unmatched) = regroup(reqs, &[]);
+            assert!(unmatched.is_empty());
+            let mut scores: Vec<Vec<f64>> = groups
+                .iter()
+                .map(|g| g.iter().map(|r| r.score).collect())
+                .collect();
+            scores.sort_by(|x, y| x[0].partial_cmp(&y[0]).unwrap());
+            assert_eq!(scores, vec![vec![0.0; 3], vec![100.0; 3]]);
         }
 
         #[test]
@@ -3725,7 +3994,7 @@ pub mod matching {
             let reqs: Vec<Req> = (1..=5)
                 .map(|i| req(i, "airport", 70.0 + i as f64))
                 .collect();
-            let (groups, unmatched) = regroup(reqs);
+            let (groups, unmatched) = regroup(reqs, &[]);
             assert!(unmatched.is_empty());
             assert!(groups.iter().all(|g| g.len() >= 2));
         }
@@ -4321,6 +4590,137 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(list, vec![B.to_string()]);
+    }
+
+    #[tokio::test]
+    async fn blocking_and_unblocking_never_changes_what_you_see() {
+        let Some(w) = world().await else { return };
+        w.post(C, "airport", &[SLOT]).await;
+        w.post(D, "kudasan", &[LATER]).await;
+        let before = w.feed(A).await;
+        w.with(move |cx| Box::pin(async move { cx.block(A, C).await }))
+            .await
+            .unwrap();
+        let during = w.feed(A).await;
+        w.with(move |cx| Box::pin(async move { cx.unblock(A, C).await }))
+            .await
+            .unwrap();
+        let after = w.feed(A).await;
+        assert_eq!(
+            before["rides"], during["rides"],
+            "a block showed which ride is C's"
+        );
+        assert_eq!(before["rides"], after["rides"]);
+        // the blocked student still never sees the blocker's rides
+        w.with(move |cx| Box::pin(async move { cx.block(C, D).await }))
+            .await
+            .unwrap();
+        let theirs = w.feed(D).await;
+        assert!(
+            !theirs.to_string().contains("airport"),
+            "D sees a ride of the student who blocked them: {theirs}"
+        );
+    }
+
+    #[tokio::test]
+    async fn never_two_trips_within_an_hour() {
+        let Some(w) = world().await else { return };
+        w.post(A, "airport", &[SLOT]).await;
+        for gap in [60, 30 * 60, HOUR - 60] {
+            let why = bad(w.try_post(A, ride("kudasan", &[SLOT + gap])).await);
+            assert!(why.contains("within an hour"), "{gap}: {why}");
+            let why = bad(w.try_post(A, ride("kudasan", &[SLOT - gap])).await);
+            assert!(why.contains("within an hour"), "-{gap}: {why}");
+        }
+        w.post(B, "kudasan", &[SLOT + 30 * 60]).await;
+        let feed = w.feed(A).await;
+        assert!(feed["rides"].as_array().unwrap().is_empty(), "{feed}");
+        w.post(A, "kudasan", &[SLOT + HOUR]).await;
+    }
+
+    #[tokio::test]
+    async fn a_relay_handle_never_links_two_rides() {
+        let Some(w) = world().await else { return };
+        let a1 = w.post(A, "airport", &[SLOT]).await;
+        let b1 = w.post(B, "airport", &[SLOT]).await;
+        let a2 = w.post(A, "kudasan", &[LATER]).await;
+        let b2 = w.post(B, "kudasan", &[LATER]).await;
+        let mut seen = Vec::new();
+        for (a, b) in [(a1, b1), (a2, b2)] {
+            w.with(move |cx| Box::pin(async move { cx.send_message(A, a, "hi").await }))
+                .await
+                .unwrap();
+            let chat = w
+                .with(move |cx| Box::pin(async move { cx.messages(B, b, None, None).await }))
+                .await
+                .unwrap();
+            seen.push(chat["messages"][0]["from"].as_str().unwrap().to_string());
+        }
+        assert!(seen.iter().all(|h| h.starts_with("relay-")), "{seen:?}");
+        assert_ne!(seen[0], seen[1], "one handle in two rides links them");
+    }
+
+    #[tokio::test]
+    async fn a_rider_reads_only_chat_written_since_they_joined() {
+        let Some(mut w) = world().await else { return };
+        let a = w.post(A, "airport", &[SLOT]).await;
+        let b = w.post(B, "airport", &[SLOT]).await;
+        w.with(move |cx| Box::pin(async move { cx.send_message(A, a, "before C").await }))
+            .await
+            .unwrap();
+        w.now += 60;
+        let c = w.post(C, "airport", &[SLOT]).await;
+        assert_eq!(w.card(C, c).await["kind"], "trip");
+        let read = |email: &'static str, rid: i32| {
+            let w = &w;
+            async move {
+                w.with(move |cx| Box::pin(async move { cx.messages(email, rid, None, None).await }))
+                    .await
+                    .unwrap()["messages"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+            }
+        };
+        assert_eq!(read(C, c).await, 0, "a newcomer read what was said before");
+        w.with(move |cx| Box::pin(async move { cx.send_message(A, a, "hello C").await }))
+            .await
+            .unwrap();
+        assert_eq!(read(C, c).await, 1);
+        assert_eq!(read(B, b).await, 2);
+    }
+
+    #[tokio::test]
+    async fn one_account_or_cancelled_trips_never_move_other_estimates() {
+        let Some(w) = world().await else { return };
+        for (i, t) in [SLOT, SLOT + 2 * HOUR, SLOT + 4 * HOUR]
+            .into_iter()
+            .enumerate()
+        {
+            let mut q = ride("airport", &[t]);
+            q.quote = Some(1200.0);
+            let rid = w.try_post(A, q).await.unwrap();
+            if i < 2 {
+                w.with(move |cx| Box::pin(async move { cx.cancel(A, rid).await }))
+                    .await
+                    .unwrap();
+            }
+        }
+        let d = w.post(D, "airport", &[LATER + 10 * HOUR]).await;
+        let card = w.card(D, d).await;
+        assert_eq!(card["fare"]["price_source"], "rate", "{card}");
+    }
+
+    #[tokio::test]
+    async fn nothing_changes_once_a_ride_is_settled() {
+        let Some(mut w) = world().await else { return };
+        let a = w.post(A, "airport", &[SLOT]).await;
+        w.post(B, "airport", &[SLOT]).await;
+        w.now = SLOT + super::SETTLE_AFTER + 60;
+        let why = bad(w
+            .with(move |cx| Box::pin(async move { cx.confirm_ride(A, a).await }))
+            .await);
+        assert!(why.contains("settled"), "{why}");
     }
 
     #[tokio::test]
