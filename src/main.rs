@@ -59,11 +59,19 @@ async fn main() {
     );
     log::info!("Created firebase token validator");
 
+    let custom_token_signer =
+        match auth::CustomTokenSigner::from_service_account_file(&env_vars.service_account_path) {
+            Ok(signer) => Arc::new(signer),
+            Err(e) => panic!("Couldn't load custom token signer: {e}"),
+        };
+    log::info!("Loaded custom token signer");
+
     let firebase_auth_service = firebase_app.auth();
     let state = AppState {
         pool: pool.clone(),
         firebase_auth_service: Arc::from(firebase_auth_service),
         firebase_token_validator,
+        custom_token_signer,
         image_directory: env_vars.image_directory.clone(),
     };
     // Queued event notifications are delivered off the request path.
@@ -82,6 +90,7 @@ async fn main() {
     let outlets_routes = routes::outlets::get_routes();
     let push_routes = routes::push::get_routes();
     let representatives_routes = routes::representatives::get_routes();
+    let sso_routes = routes::sso::get_routes();
     let router = Router::new()
         .route("/", get(async || "Go to /api-docs for API Documentation"))
         .nest_service("/images", ServeDir::new(&env_vars.image_directory))
@@ -95,6 +104,7 @@ async fn main() {
         .merge(outlets_routes)
         .merge(push_routes)
         .merge(representatives_routes)
+        .merge(sso_routes)
         .layer(cors)
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env_vars.port))
@@ -109,6 +119,7 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
         firebase_project_id: String::new(),
         port: String::new(),
         image_directory: String::new(),
+        service_account_path: String::new(),
     };
     match var("POSTGRES_URL") {
         Ok(v) => env_vars.postgres_url = v,
@@ -138,6 +149,14 @@ fn get_env_vars() -> Result<EnvironmentVariables, String> {
             ));
         }
     }
+    match var("GOOGLE_APPLICATION_CREDENTIALS") {
+        Ok(v) => env_vars.service_account_path = v,
+        Err(e) => {
+            return Err(format!(
+                "Couldn't get environment variable GOOGLE_APPLICATION_CREDENTIALS: {e}"
+            ));
+        }
+    }
     Ok(env_vars)
 }
 
@@ -146,6 +165,7 @@ struct EnvironmentVariables {
     firebase_project_id: String,
     port: String,
     image_directory: String,
+    service_account_path: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -153,5 +173,6 @@ pub struct AppState {
     pool: PgPool,
     firebase_auth_service: Arc<FirebaseAuth<ReqwestApiClient>>,
     pub firebase_token_validator: Arc<rs_firebase_admin_sdk::jwt::LiveValidator>,
+    custom_token_signer: Arc<auth::CustomTokenSigner>,
     image_directory: String,
 }

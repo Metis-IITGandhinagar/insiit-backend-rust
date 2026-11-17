@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, postgres::PgQueryResult, query, query_as};
 
 use crate::AppState;
+use crate::auth::SSO_CLIENT_CLAIM;
 
 #[derive(Serialize, Deserialize, FromRow, Default)]
 pub struct AdminEntry {
@@ -65,6 +66,11 @@ impl AdminPermission {
                 return Err(String::from("Could not authorize user"));
             }
         };
+        // Partner apps share our Firebase project, so a session they got through
+        // SSO would otherwise be accepted here. Admin actions need InsIIT's own.
+        if user.contains_key(SSO_CLIENT_CLAIM) {
+            return Ok(None);
+        }
         let email = match user.get("email") {
             Some(value) => match value.as_str() {
                 Some(email) => email.to_string(),

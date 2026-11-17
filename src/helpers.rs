@@ -10,6 +10,7 @@ use crate::schemas::mess_schemas;
 use crate::schemas::outlets_schemas;
 use crate::schemas::push_schemas;
 use crate::schemas::representatives_schemas;
+use crate::schemas::sso_schemas;
 
 pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     admin_schemas::initialize_table(pool)
@@ -42,6 +43,9 @@ pub async fn initialize_database(pool: &PgPool) -> Result<(), String> {
     representatives_schemas::initialize_table(pool)
         .await
         .expect("Couldn't initialize representatives table");
+    sso_schemas::initialize_table(pool)
+        .await
+        .expect("Couldn't initialize sso tables");
     log::info!("Created all required tables");
     Ok(())
 }

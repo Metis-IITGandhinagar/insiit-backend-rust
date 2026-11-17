@@ -12,6 +12,9 @@ dotenvy = "0.15.7"
 error-stack = "0.7.1"
 # WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
 google-cloud-auth = "1.13.0"
+getrandom = "0.4.3"
+# WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
+jsonwebtoken = "10.4.0"
 log = "0.4.33"
 # WARNING Don't update this version, need to follow version that ships with rs-firebase-admin-sdk
 # default-features is off so we reuse the TLS stack rs-firebase-admin-sdk already enables

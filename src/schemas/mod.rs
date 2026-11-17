@@ -8,3 +8,4 @@ pub mod mess_schemas;
 pub mod outlets_schemas;
 pub mod push_schemas;
 pub mod representatives_schemas;
+pub mod sso_schemas;

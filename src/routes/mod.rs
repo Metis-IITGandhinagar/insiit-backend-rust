@@ -8,3 +8,4 @@ pub mod mess;
 pub mod outlets;
 pub mod push;
 pub mod representatives;
+pub mod sso;
