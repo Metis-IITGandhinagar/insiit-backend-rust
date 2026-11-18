@@ -14,7 +14,6 @@ use tower_http::{cors::CorsLayer, services::ServeDir};
 
 mod auth;
 mod helpers;
-mod notifications;
 mod routes;
 mod schemas;
 pub mod utils;
@@ -66,10 +65,8 @@ async fn main() {
         firebase_token_validator,
         image_directory: env_vars.image_directory.clone(),
     };
-    // Queued event notifications are delivered off the request path.
-    let notifier =
-        notifications::Notifier::new(&firebase_app, env_vars.firebase_project_id.clone());
-    tokio::spawn(notifications::run_worker(pool.clone(), notifier));
+    let notifier = utils::Notifier::new(&firebase_app, env_vars.firebase_project_id.clone());
+    tokio::spawn(helpers::run_notification_worker(pool.clone(), notifier));
     let cors = CorsLayer::permissive();
 
     let admin_routes = routes::admin::get_routes();
